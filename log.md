@@ -985,7 +985,62 @@ Never include credentials or rewrite another contributor's history.
   - `log.md`
 - **Team Frontier Status:**
   - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33, 12, 34.
-  - Next in line in topological order: **Ticket 35** (`chandrabhan-kushwaha`: "[P0] 35: Run the golden end-to-end connected demo path").
+  - Next in line in topological order: **Ticket 35** (`AnushkaBhardwaj15`: "[P0] 35: Verify connected SDK security and both recovery scenarios together").
+
+---
+
+## Entry: 2026-10-11 - Ticket 35: Verify connected SDK security and both recovery scenarios together
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#35](https://github.com/ashudotbuilds/PLAN9/issues/35)
+- **Code Commit:** `3ec2b41`
+- **Status:** COMPLETED, VERIFIED, AND INTEGRATED into main; Issue #35 verified.
+- **Scope:** PRD FR-ING-01, FR-ING-02, FR-SDK-01, FR-SDK-03, FR-LIN-01, FR-MON-01, NFR-19, NFR-20, NFR-21, NFR-22. Sections 20, 21, 21.1, 25, 27; AT-SDK-01 through AT-SDK-17; Endpoints A20, A21, A24, A25, A26, A27, A28, A29, A30, A31, A03, A04, A16, A17.
+- **Implementation summary:**
+  1. **Combined Integration Acceptance Test Suite (`tests/integration/connected-demo.test.ts`):**
+     - Covered all 17 acceptance gates AT-SDK-01 through AT-SDK-17.
+     - AT-SDK-01: Authenticated operator creates project and issues dev key; verifies safe metadata read (prefix only, zero secret leakage).
+     - AT-SDK-02: Valid key registers Users dependency and submits telemetry batch.
+     - AT-SDK-03: Invalid, revoked, rotated-old, and wrong-project/env keys return 401/403; ingestion key cannot access operator routes.
+     - AT-SDK-04: Sample consumer executes 3 real HTTP Users requests with manual tracking and batch flush.
+     - AT-SDK-05: Redaction strips auth tokens, cookies, apiKeys, and URL embedded credentials.
+     - AT-SDK-06: Control plane offline does not crash or block host application requests.
+     - AT-SDK-07: Idempotent batch deduplication and 409 `EVENT_ID_CONFLICT` on conflicting data reuse.
+     - AT-SDK-08: Inventory dashboard lists scoped dependencies with health and confidence scores.
+     - AT-SDK-09: Baseline capture returns 201 with immutable fingerprint.
+     - AT-SDK-10: Changed scenario detects field-rename drift and produces incident findings.
+     - AT-SDK-11: Impact analysis traces field-read lineage to affected workflows (`welcome_email`).
+     - AT-SDK-12: Full proposal, 9-gate shadow validation, and activation to `recovered`.
+     - AT-SDK-13: Unchanged-shape Shipping scenario canary refuses automatic activation (`review_required`).
+     - AT-SDK-14: Tampered or unvalidated patch hashes rejected with 409 `PATCH_HASH_MISMATCH`.
+     - AT-SDK-15: Reset demo fence rejects stale session batches with 409 `STALE_SESSION`.
+     - AT-SDK-16: Graceful deterministic fallback without AI model credentials.
+     - AT-SDK-17: 100% loopback test fixture execution without cloud credentials or production network access.
+  2. **SDK & API Alignment:**
+     - Updated `@driftguard/sdk` to target canonical `/api/ingest/dependencies` endpoint (A27) with backward-compatibility alias in `apps/api`.
+     - Corrected `STALE_SESSION` error status code to 409 per PRD & API catalog.
+     - Added integration project configuration to `vitest.workspace.ts`.
+  3. **Documentation (`docs/sdk-quickstart.md`):**
+     - Authored complete SDK quickstart guide documenting setup, key boundaries, dual recovery scenarios, rehearsal evidence, and security invariants.
+  4. **Verification & Suite Coverage:**
+     - 145 vitest tests passing across all 8 workspace projects (`pnpm test`).
+     - Monorepo production build clean (`pnpm -r run build`).
+     - Planning integrity validated with 100% checks passing (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `apps/api/src/app.ts`
+  - `apps/api/src/services/observation-ingestion-service.ts`
+  - `apps/api/tests/api.test.ts`
+  - `apps/sample-consumer/tests/sample-consumer.test.ts`
+  - `packages/sdk/src/index.ts`
+  - `vitest.workspace.ts`
+  - `tests/integration/connected-demo.test.ts`
+  - `docs/sdk-quickstart.md`
+  - `.scratch/driftguard/issues/35-connected-demo-acceptance.md`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33, 12, 34, 35.
+  - Next in line in topological order: **Ticket 13** (`ashudotbuilds`: "[P0] 13: Golden local demo verification, packaged release, and rehearsal run").
 
 
 
