@@ -392,3 +392,57 @@ Never include credentials or rewrite another contributor's history.
   - Ticket 29 (`saransh-sh`: "Issue rotate and revoke environment-scoped ingestion keys") is also UNBLOCKED.
 - **Log commit identifier:** `docs: record issue 06 main integration and closure in dev log`.
 - **Log publication:** Confirmed pushed at `main`.
+
+---
+
+## Entry: 2026-10-11 - Ticket 07: Activate Validated Adapters and Replay Safely (codex/issue-07-activation-replay-and-rollback)
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#7](https://github.com/ashudotbuilds/PLAN9/issues/7)
+- **Branch:** `codex/issue-07-activation-replay-and-rollback`
+- **Status:** IMPLEMENTED AND VERIFIED on feature branch; ready for merge to main.
+- **Scope:** PRD FR-VAL-05, FR-VAL-06, FR-VAL-08, NFR-05, FR-OPS-01, NFR-20; Sections 13, 13.2, 16, 21.1 (AT-SDK-15); Endpoints `A12` (`POST /api/patches/:patchId/activate`), `A13` (`POST /api/patches/:patchId/rollback` and alias `POST /api/adapters/:adapterId/rollback`), and workflow replay `A15`.
+- **Implementation summary:**
+  1. **Contracts (`packages/contracts`):**
+     - Authored `ActiveAdapterSchema` (version, parentVersion, patchId, patchHash, provider, targetEntity, rules, preservedFields, status `active | superseded | rolled_back`, activatedAt).
+     - Authored `PostActivationReplayOutcomeSchema` (status `passed | failed`, replays array, details).
+     - Authored `ActivatePatchRequestSchema`, `ActivatePatchResponseSchema`, `RollbackPatchRequestSchema`, `RollbackPatchResponseSchema`.
+     - Extended `IncidentDetailSchema` with `activeAdapter` and `recoveryStatus: recovered | rolled_back | pending`.
+  2. **API & Engine Service (`apps/api`):**
+     - Added `activeAdapters` registry scoped by `projectId:environment`.
+     - Implemented `activatePatch` (FR-VAL-05, FR-VAL-08):
+       - Verifies existing passing shadow validation run with eligibility `eligible`.
+       - Cryptographically verifies patch hash matching between candidate and proposal.
+       - Synthesizes incremented version linked to `parentVersion`.
+       - Executes live post-activation replay across affected consumer workflows (`welcome_email`, `customer_profile`).
+       - If post-activation replays pass: transitions incident status to `recovered` and recoveryStatus to `recovered`.
+       - If post-activation replays fail (FR-VAL-08): automatically restores parent adapter version, marks new adapter `rolled_back`, incident status `rolled_back`, retaining all failed patch records and replay evidence.
+     - Implemented `rollbackPatch` (FR-VAL-06):
+       - Validates prior parent adapter exists (rejects with 409 `NO_ROLLBACK_PARENT` otherwise).
+       - Restores parent adapter version 1, sets previous adapter status `superseded`, sets incident status `rolled_back` and recoveryStatus `rolled_back`.
+       - Records audit event `aud_*`.
+     - Mounted routes: `POST /api/patches/:patchId/activate` (A12), `POST /api/patches/:patchId/rollback` (A13), and `POST /api/adapters/:adapterId/rollback` (A13 alias).
+  3. **Control Plane Frontend (`apps/web`):**
+     - Extended `ApiClient` with typed `activatePatch` and `rollbackPatch` methods.
+     - Added UI activation drawer controls: "Activate Adapter (A12)" enabled only for eligible validated proposals.
+     - Added "Rollback to Parent (A13)" button enabled when active adapter version > 1.
+     - Rendered Active Adapter status badge (`ACTIVE`, `ROLLED BACK`, `SUPERSEDED`), version lineage (`v2, parent: v1`), and `RECOVERED` / `ROLLED BACK` recovery status badges.
+     - Displayed post-activation replay verification cards for `welcome_email` and `customer_profile`.
+  4. **Acceptance & Regression Testing:**
+     - Added 7 comprehensive integration tests in `apps/api/tests/api.test.ts` covering authentication guards, validated activation, automatic post-activation replay, 409 rejection for unvalidated patches, 409 rejection for hash mismatch, 404 for unknown patch, safe rollback to parent adapter, alias route support, and 409 rejection when no parent exists.
+     - Added UI integration test in `apps/web/src/App.test.tsx` verifying interactive activation flow, `RECOVERED` badge, active adapter inspector, and rollback button triggering `ROLLED BACK` status.
+     - Verified all 60 tests pass across 4 packages and apps (`pnpm run test`).
+     - Verified clean production build across workspace (`pnpm -r run build`).
+     - Verified planning integrity via `node scripts/validate-planning.mjs`.
+- **Files Modified:**
+  - `packages/contracts/src/index.ts`
+  - `apps/api/src/app.ts`
+  - `apps/api/src/services/incident-service.ts`
+  - `apps/api/tests/api.test.ts`
+  - `apps/web/src/api-client.ts`
+  - `apps/web/src/App.tsx`
+  - `apps/web/src/App.test.tsx`
+  - `.scratch/driftguard/issues/07-activation-replay-and-rollback.md`
+  - `log.md`
+- **Next Step:** Merge `codex/issue-07-activation-replay-and-rollback` to `main`, push `main`, close Issue #7 via GitHub API, update `log.md` on `main`, and advance to Ticket 08 (`.scratch/driftguard/issues/08-backend-recovery-run.md`).
