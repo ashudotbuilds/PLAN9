@@ -185,5 +185,27 @@ Never include credentials or rewrite another contributor's history.
   - Ticket 28 is COMPLETED and closed.
   - Ticket 02 (`saransh-sh`: "Capture a healthy baseline and trace workflow reads") is now fully UNBLOCKED and ready to start.
 - **Log commit identifier:** `docs: record issue 28 main integration and closure in dev log`.
-- **Log publication:** Confirmed pushed at `main`.
+- **Log publication:** Confirmed pushed at `ccb352a`.
+
+## 2026-10-11 — Ticket 02: Capture a healthy baseline and trace workflow reads
+
+- **Task:** Issue #2 ([P0] 02: Capture a healthy baseline and trace workflow reads).
+- **Authenticated identity:** ashudotbuilds
+- **Status:** COMPLETED. Feature pushed to `origin/codex/issue-02-healthy-baseline-and-lineage`.
+- **Scope & Governance:** PRD FR-OBS-01, FR-OBS-02, FR-OBS-03, FR-OBS-05, FR-IMP-01, FR-IMP-02, NFR-03, NFR-09, NFR-14, FR-LIN-01, FR-MON-01, FR-ING-02, NFR-21, NFR-22. Implemented baseline capture over HTTP for all 3 user identities (`u-123`, `u-456`, `u-789`), inventory items, and shipping estimates; baseline adapter mapping `name -> CanonicalUser.displayName`; dynamic JavaScript Proxy runtime field-read lineage tracing; 4 named workflows (`welcome_email`, `customer_profile`, `inventory_sync`, `delivery_estimate`) with explicit invariants; raw evidence immutability and normalized deterministic fingerprinting; shared mock demo lease lock (`409 DEMO_SCOPE_BUSY`); 1,000-observation / 10 MiB session retention bound (`429 RETENTION_LIMIT`); control-plane routes `POST /api/baselines/capture` (A03) and `POST /api/workflows/:workflowId/replay` (A15).
+- **Changes made:**
+  - `packages/contracts`: Added contracts for `BaselineSummarySchema`, `CaptureBaselineRequestSchema`, `CaptureBaselineResponseSchema`, `WorkflowIdSchema`, `DependencyEdgeSchema`, `ReplayWorkflowRequestSchema`, `ReplayWorkflowResponseSchema`, and extended `DemoStateResponseSchema` with baseline and readEdges.
+  - `apps/api`: Implemented `BaselineService` (`apps/api/src/services/baseline-service.ts`) with HTTP fixture capture, lease locking, proxy-based field read tracing, deterministic fingerprinting, and workflow replay engine; mounted `POST /api/baselines/capture` (A03) and `POST /api/workflows/:workflowId/replay` (A15); updated `ProjectService.getDemoState` to project baseline and readEdges.
+  - `apps/web`: Added `captureBaseline` and `replayWorkflow` to `api-client.ts`; added Baseline Behavioral Capture panel (A03) and Workflow Lineage & Invariant Tracing interactive cards (A15) to `App.tsx`.
+  - `.scratch/driftguard/issues/02-healthy-baseline-and-lineage.md`: Checked acceptance criteria checklist and marked status as completed.
+- **Verification:**
+  - `pnpm -r run build`: All 4 packages compiled cleanly.
+  - `pnpm -r run typecheck`: 0 TypeScript errors across all 4 packages.
+  - `vitest run`: 36 of 36 tests passed across all 4 suites (`@driftguard/contracts`, `@driftguard/mock-providers`, `@driftguard/api`, `@driftguard/web`).
+  - `node scripts/validate-planning.mjs`: All 41 tickets, 97 requirements, 37 API routes, and 17 SDK gates validated successfully.
+- **Branch:** `codex/issue-02-healthy-baseline-and-lineage`.
+- **Feature commit:** `82a0b664cdc010168e55f776702d282e96e82095`.
+- **Confirmed push:** Confirmed push to `origin/codex/issue-02-healthy-baseline-and-lineage`.
+- **Log commit identifier:** `docs: record issue 02 completion in dev log`.
+
 
