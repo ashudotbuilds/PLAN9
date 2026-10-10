@@ -265,5 +265,27 @@ Never include credentials or rewrite another contributor's history.
 - **Log commit identifier:** `docs: record issue 03 main integration and closure in dev log`.
 - **Log publication:** Confirmed pushed at `main`.
 
+## 2026-10-11 — Ticket 04: Explain affected and unaffected workflows
+
+- **Task:** Issue #4 ([P0] 04: Explain affected and unaffected workflows).
+- **Authenticated identity:** ashudotbuilds
+- **Status:** COMPLETED. Feature pushed to `origin/codex/issue-04-explain-impact`.
+- **Scope & Governance:** PRD FR-IMP-03, FR-IMP-04, FR-IMP-05, FR-UI-04, FR-LIN-01, FR-MON-01; sections 13, 13.3, 21.1 (AT-SDK-11); API route `POST /api/incidents/:incidentId/analyze-impact` (A09). Implemented runtime lineage impact analysis that follows changed provider fields through canonical adapter mappings to consumed workflows; identified `welcome_email` and `customer_profile` as affected due to runtime consumption of `displayName` derived from drifted `name`; proved `inventory_sync` and `delivery_estimate` are unaffected; mapped provider → endpoint → client → adapter → workflow lineage trace paths with immutable evidence references and `runtime_read` provenance; provided fallback to `insufficient_evidence` and `unknown` status when lineage edges are absent (never inventing zero impact); and added a 3-column lineage trace UI in the control-plane incident drawer.
+- **Changes made:**
+  - `packages/contracts`: Added contracts for `LineageProvenanceSchema`, `ImpactStatusSchema`, `WorkflowImpactSchema`, `TracePathSchema`, `AnalyzeImpactRequestSchema`, `AnalyzeImpactResponseSchema`, and added optional `impactAnalysis` to `IncidentDetailSchema`.
+  - `apps/api`: Implemented `IncidentService.analyzeImpact` (`apps/api/src/services/incident-service.ts`) checking baseline read edges, mapping affected vs unaffected workflows with invariants and provenance, caching result on the incident record; mounted endpoint `POST /api/incidents/:incidentId/analyze-impact` (A09) in `apps/api/src/app.ts`.
+  - `apps/web`: Added `apiClient.analyzeImpact` in `apps/web/src/api-client.ts`; added interactive "Analyze Workflow Impact (A09)" trigger and 3-column trace display (Affected Workflows, Unaffected Workflows, Lineage Trace Paths) in `apps/web/src/App.tsx`.
+  - `apps/api/tests/api.test.ts`: Added tests verifying endpoint A09 returns affected/unaffected workflows and trace paths, caches impact on incident detail A08, returns 404 for unknown incident, and returns insufficient evidence with unknown workflows when lineage is missing.
+  - `apps/web/src/App.test.tsx`: Added UI test for triggering impact analysis and asserting 3-column lineage trace rendering.
+  - `.scratch/driftguard/issues/04-explain-impact.md`: Completed acceptance criteria checklist and marked status as completed.
+- **Verification:**
+  - `pnpm -r run build`: All 4 packages compiled cleanly.
+  - `pnpm -r run typecheck`: 0 TypeScript errors across all 4 packages.
+  - `vitest run`: 43 of 43 tests passed across all 4 suites (`@driftguard/contracts`, `@driftguard/mock-providers`, `@driftguard/api`, `@driftguard/web`).
+  - `node scripts/validate-planning.mjs`: All 41 tickets, 97 requirements, 37 API routes, and 17 SDK gates validated successfully.
+- **Branch:** `codex/issue-04-explain-impact`.
+- **Feature commit:** `dbdd3a5`.
+- **Confirmed push:** Confirmed push to `origin/codex/issue-04-explain-impact`.
+
 
 
