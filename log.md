@@ -171,4 +171,19 @@ Never include credentials or rewrite another contributor's history.
 - **Feature commit:** `7d314a146760b86c78ac41a710582e87070976cd`.
 - **Confirmed push:** Confirmed push to `origin/codex/issue-28-local-project-onboarding`.
 - **Log commit identifier:** `docs: record issue 28 completion in dev log`.
+- **Log publication:** Confirmed pushed at `58b2778`.
+
+## 2026-10-11 — Main integration: Issue #28 closure and frontier advancement
+
+- **Task:** User authorized fast-forward integration of completed Issue #28 into `main`, closure of GitHub Issue #28, and team frontier update.
+- **Authenticated identity:** ashudotbuilds via GitHub API and Git credentials.
+- **Status:** PUSHED to origin/main; Issue #28 closed on GitHub.
+- **Scope:** Default-branch publication of Ticket 28 implementation and dev log.
+- **Integration:** Fast-forward merged `codex/issue-28-local-project-onboarding` (commits `7d314a1` and `58b2778`) into `main`. Pushed to `origin/main`. Closed GitHub Issue #28 (state: `closed`, reason: `completed`).
+- **Team Frontier Status:**
+  - Ticket 01 is COMPLETED and closed.
+  - Ticket 28 is COMPLETED and closed.
+  - Ticket 02 (`saransh-sh`: "Capture a healthy baseline and trace workflow reads") is now fully UNBLOCKED and ready to start.
+- **Log commit identifier:** `docs: record issue 28 main integration and closure in dev log`.
+- **Log publication:** Confirmed pushed at `main`.
 
