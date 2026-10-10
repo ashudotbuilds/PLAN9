@@ -1947,6 +1947,268 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(incident?.status).toBe('review_required');
     });
   });
+
+  describe('Ticket 29: Ingestion Key Issuance, Rotation & Revocation (FR-KEY-01, FR-KEY-02, FR-KEY-03, NFR-08, NFR-20)', () => {
+    it('requires operator authentication for key issuance, rotation and revocation (A24, A25, A26)', async () => {
+      const issueRes = await app.inject({
+        method: 'POST',
+        url: '/api/projects/prj_demo_default/keys',
+        payload: { environment: 'development' }
+      });
+      expect(issueRes.statusCode).toBe(401);
+
+      const rotateRes = await app.inject({
+        method: 'POST',
+        url: '/api/projects/prj_demo_default/keys/key_1/rotate',
+        payload: {}
+      });
+      expect(rotateRes.statusCode).toBe(401);
+
+      const revokeRes = await app.inject({
+        method: 'POST',
+        url: '/api/projects/prj_demo_default/keys/key_1/revoke',
+        payload: {}
+      });
+      expect(revokeRes.statusCode).toBe(401);
+    });
+
+    it('issues cryptographically random key, returns plaintext once with Cache-Control no-store, and persists only digest (A24)', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+
+      const issueRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/projects/prj_demo_default/keys',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { environment: 'development', label: 'Backend SDK Key' }
+      });
+
+      expect(issueRes.statusCode).toBe(201);
+      expect(issueRes.headers['cache-control']).toBe('no-store');
+      const body = issueRes.json();
+
+      expect(body.keyId).toMatch(/^key_/);
+      expect(body.prefix).toBe(`dg_ing_${body.keyId}`);
+      expect(body.apiKey).toMatch(/^dg_ing_key_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+      expect(body.environment).toBe('development');
+      expect(body.auditEventId).toMatch(/^aud_/);
+
+      // Verify that stored record contains digest, not plaintext
+      const stored = (keyService as any).keys.get(body.keyId);
+      expect(stored.digest).toBeDefined();
+      expect(stored.apiKey).toBeUndefined();
+      expect(stored.digest).toHaveLength(64); // SHA-256 hex string
+
+      // Verify key passes ingestion auth guard
+      const authRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/projects/prj_demo_default/keys/verify-scope?environment=development`,
+        headers: { Authorization: `Bearer ${body.apiKey}` }
+      });
+      expect(authRes.statusCode).toBe(200);
+      expect(authRes.json().status).toBe('authenticated');
+    });
+
+    it('enforces maximum 3 active keys per environment with 409 ACTIVE_KEY_LIMIT_REACHED', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+
+      // Create 3 keys in development
+      for (let i = 0; i < 3; i++) {
+        const res = await testApp.inject({
+          method: 'POST',
+          url: '/api/projects/prj_demo_default/keys',
+          headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+          payload: { environment: 'development' }
+        });
+        expect(res.statusCode).toBe(201);
+      }
+
+      // 4th key in development fails
+      const fourthRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/projects/prj_demo_default/keys',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { environment: 'development' }
+      });
+      expect(fourthRes.statusCode).toBe(409);
+      expect(fourthRes.json().error.code).toBe('ACTIVE_KEY_LIMIT_REACHED');
+
+      // But production environment can still issue up to 3 keys
+      const prodRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/projects/prj_demo_default/keys',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { environment: 'production' }
+      });
+      expect(prodRes.statusCode).toBe(201);
+    });
+
+    it('rejects wrong-project and wrong-environment keys before execution', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+
+      const issueRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/projects/prj_demo_default/keys',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { environment: 'development' }
+      });
+      const { apiKey } = issueRes.json();
+
+      // Wrong project scope
+      const wrongProjRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/projects/prj_other/keys/verify-scope?environment=development`,
+        headers: { Authorization: `Bearer ${apiKey}` }
+      });
+      expect(wrongProjRes.statusCode).toBe(403);
+      expect(wrongProjRes.json().error.code).toBe('SCOPE_FORBIDDEN');
+
+      // Wrong environment scope
+      const wrongEnvRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/projects/prj_demo_default/keys/verify-scope?environment=production`,
+        headers: { Authorization: `Bearer ${apiKey}` }
+      });
+      expect(wrongEnvRes.statusCode).toBe(403);
+      expect(wrongEnvRes.json().error.code).toBe('SCOPE_FORBIDDEN');
+    });
+
+    it('rotates ingestion key atomically, invalidating old key and preserving replacesKeyId (A25)', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+
+      const issueRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/projects/prj_demo_default/keys',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { environment: 'development' }
+      });
+      const oldKey = issueRes.json();
+
+      // Rotate key (A25)
+      const rotateRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/projects/prj_demo_default/keys/${oldKey.keyId}/rotate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {}
+      });
+      expect(rotateRes.statusCode).toBe(201);
+      expect(rotateRes.headers['cache-control']).toBe('no-store');
+      const newKey = rotateRes.json();
+
+      expect(newKey.replacesKeyId).toBe(oldKey.keyId);
+      expect(newKey.keyId).not.toBe(oldKey.keyId);
+
+      // Old key is now revoked and rejected
+      const oldAuthRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/projects/prj_demo_default/keys/verify-scope?environment=development`,
+        headers: { Authorization: `Bearer ${oldKey.apiKey}` }
+      });
+      expect(oldAuthRes.statusCode).toBe(401);
+      expect(oldAuthRes.json().error.code).toBe('REVOKED_INGESTION_KEY');
+
+      // New key succeeds
+      const newAuthRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/projects/prj_demo_default/keys/verify-scope?environment=development`,
+        headers: { Authorization: `Bearer ${newKey.apiKey}` }
+      });
+      expect(newAuthRes.statusCode).toBe(200);
+
+      // Rotating already revoked key returns 409
+      const doubleRotateRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/projects/prj_demo_default/keys/${oldKey.keyId}/rotate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {}
+      });
+      expect(doubleRotateRes.statusCode).toBe(409);
+      expect(doubleRotateRes.json().error.code).toBe('KEY_ALREADY_REVOKED');
+    });
+
+    it('revokes ingestion key with exact idempotency and no duplicate audit events (A26)', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+
+      const issueRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/projects/prj_demo_default/keys',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { environment: 'development' }
+      });
+      const { keyId, apiKey } = issueRes.json();
+
+      // Revoke key (A26)
+      const revokeRes1 = await testApp.inject({
+        method: 'POST',
+        url: `/api/projects/prj_demo_default/keys/${keyId}/revoke`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {}
+      });
+      expect(revokeRes1.statusCode).toBe(200);
+      const res1 = revokeRes1.json();
+      expect(res1.status).toBe('revoked');
+      expect(res1.auditEventId).toMatch(/^aud_/);
+
+      // Repeated revocation returns same audit event id without duplicate emission
+      const revokeRes2 = await testApp.inject({
+        method: 'POST',
+        url: `/api/projects/prj_demo_default/keys/${keyId}/revoke`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {}
+      });
+      expect(revokeRes2.statusCode).toBe(200);
+      const res2 = revokeRes2.json();
+      expect(res2.auditEventId).toBe(res1.auditEventId);
+
+      // Key fails auth
+      const authRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/projects/prj_demo_default/keys/verify-scope?environment=development`,
+        headers: { Authorization: `Bearer ${apiKey}` }
+      });
+      expect(authRes.statusCode).toBe(401);
+      expect(authRes.json().error.code).toBe('REVOKED_INGESTION_KEY');
+    });
+
+    it('lists safe metadata without plaintext or digest in A23 project detail', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+
+      await testApp.inject({
+        method: 'POST',
+        url: '/api/projects/prj_demo_default/keys',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { environment: 'development', label: 'Frontend Analytics' }
+      });
+
+      const detailRes = await testApp.inject({
+        method: 'GET',
+        url: '/api/projects/prj_demo_default?environment=development',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+
+      expect(detailRes.statusCode).toBe(200);
+      const detail = detailRes.json();
+      expect(detail.keyMetadata.length).toBe(1);
+
+      const meta = detail.keyMetadata[0];
+      expect(meta.keyId).toMatch(/^key_/);
+      expect(meta.prefix).toMatch(/^dg_ing_/);
+      expect(meta.status).toBe('active');
+      expect(meta.apiKey).toBeUndefined(); // Never returns plaintext
+      expect(meta.digest).toBeUndefined(); // Never returns digest
+    });
+  });
 });
 
 

@@ -8,25 +8,30 @@ import {
   OperatorSessionRequestSchema,
   CreateProjectRequestSchema,
   ProjectEnvironmentSchema,
+  ProjectEnvironment,
   CaptureBaselineRequestSchema,
   WorkflowIdSchema,
   ReplayWorkflowRequestSchema,
   InjectScenarioRequestSchema,
   RunObservationsRequestSchema,
   ActivatePatchRequestSchema,
-  RollbackPatchRequestSchema
+  RollbackPatchRequestSchema,
+  CreateIngestionKeyRequestSchema
 } from '@driftguard/contracts';
 import { randomUUID } from 'node:crypto';
 import { OperatorAuthService } from './services/operator-auth-service.js';
 import { ProjectService } from './services/project-service.js';
 import { BaselineService } from './services/baseline-service.js';
 import { IncidentService } from './services/incident-service.js';
+import { KeyService } from './services/key-service.js';
 
 export interface ApiAppOptions {
   operatorToken?: string;
   mockProvidersBaseUrl?: string;
   baselineService?: BaselineService;
   incidentService?: IncidentService;
+  projectService?: ProjectService;
+  keyService?: KeyService;
 }
 
 export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
@@ -36,7 +41,11 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
   });
 
   const authService = new OperatorAuthService(options.operatorToken);
-  const projectService = new ProjectService();
+  const keyService = options.keyService || new KeyService();
+  const projectService = options.projectService || new ProjectService(keyService);
+  if (!options.projectService) {
+    projectService.setKeyService(keyService);
+  }
   const baselineService =
     options.baselineService ||
     new BaselineService({ mockProvidersBaseUrl: options.mockProvidersBaseUrl });
@@ -254,6 +263,134 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     }
 
     return project;
+  });
+
+  // Shared Ingestion Auth Guard (Bound to project & environment; no operator/recovery privileges)
+  const requireIngestionAuth = async (request: FastifyRequest, reply: FastifyReply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const authHeader = request.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return reply.status(401).send({
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Missing or malformed Authorization header with Bearer token.',
+          details: {},
+          correlationId
+        }
+      });
+    }
+
+    const token = authHeader.slice(7).trim();
+    const { projectId } = (request.params as { projectId?: string }) || {};
+    const query = (request.query as { environment?: string }) || {};
+    const body = ((request.body as { environment?: string; projectId?: string }) || {});
+    const targetProject = projectId || body.projectId;
+    const targetEnv = body.environment || query.environment;
+
+    const verification = keyService.verifyKey(
+      token,
+      targetProject,
+      targetEnv ? (targetEnv as ProjectEnvironment) : undefined
+    );
+
+    if (!verification.valid) {
+      const statusCode = verification.code === 'SCOPE_FORBIDDEN' ? 403 : 401;
+      return reply.status(statusCode).send({
+        error: {
+          code: verification.code || 'UNAUTHORIZED',
+          message: verification.message || 'Ingestion key verification failed.',
+          details: {},
+          correlationId
+        }
+      });
+    }
+
+    (request as any).ingestionAuth = verification.key;
+  };
+
+  // A24: Create Ingestion Key (Cache-Control: no-store, 1-time plaintext)
+  app.post('/api/projects/:projectId/keys', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const { projectId } = request.params as { projectId: string };
+
+    const project = projectService.getProjectRecord(projectId);
+    if (!project) {
+      return reply.status(404).send({
+        error: {
+          code: 'PROJECT_NOT_FOUND',
+          message: `Project '${projectId}' was not found.`,
+          details: { projectId },
+          correlationId
+        }
+      });
+    }
+
+    const parsed = CreateIngestionKeyRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Invalid ingestion key creation payload.',
+          details: parsed.error.format(),
+          correlationId
+        }
+      });
+    }
+
+    const result = keyService.createKey(projectId, parsed.data.environment, parsed.data.label);
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(201).send(result);
+  });
+
+  // A25: Rotate Ingestion Key (Cache-Control: no-store, 1-time replacement plaintext)
+  app.post('/api/projects/:projectId/keys/:keyId/rotate', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const { projectId, keyId } = request.params as { projectId: string; keyId: string };
+
+    const project = projectService.getProjectRecord(projectId);
+    if (!project) {
+      return reply.status(404).send({
+        error: {
+          code: 'PROJECT_NOT_FOUND',
+          message: `Project '${projectId}' was not found.`,
+          details: { projectId },
+          correlationId
+        }
+      });
+    }
+
+    const result = keyService.rotateKey(projectId, keyId);
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(201).send(result);
+  });
+
+  // A26: Revoke Ingestion Key (Idempotent state action)
+  app.post('/api/projects/:projectId/keys/:keyId/revoke', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const { projectId, keyId } = request.params as { projectId: string; keyId: string };
+
+    const project = projectService.getProjectRecord(projectId);
+    if (!project) {
+      return reply.status(404).send({
+        error: {
+          code: 'PROJECT_NOT_FOUND',
+          message: `Project '${projectId}' was not found.`,
+          details: { projectId },
+          correlationId
+        }
+      });
+    }
+
+    const result = keyService.revokeKey(projectId, keyId);
+    return reply.status(200).send(result);
+  });
+
+  // Scope verification diagnostic endpoint using requireIngestionAuth
+  app.get('/api/projects/:projectId/keys/verify-scope', { preHandler: [requireIngestionAuth] }, async (request) => {
+    return {
+      status: 'authenticated',
+      ingestionAuth: (request as any).ingestionAuth
+    };
   });
 
   // A02: Demo State Projection

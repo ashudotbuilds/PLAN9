@@ -635,3 +635,51 @@ Never include credentials or rewrite another contributor's history.
 - **Team Frontier Status:**
   - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10.
   - Next in line in topological order: **Ticket 29** (`saransh-sh`: "[P0] 29: Issue, rotate, and revoke environment-scoped ingestion keys").
+
+---
+
+## Entry: 2026-10-11 - Ticket 29: Issue rotate and revoke environment-scoped ingestion keys (codex/issue-29-project-ingestion-keys)
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#29](https://github.com/ashudotbuilds/PLAN9/issues/29)
+- **Branch:** `codex/issue-29-project-ingestion-keys`
+- **Status:** COMPLETED, VERIFIED, AND INTEGRATED into main in single commit per user instruction; Issue #29 closed.
+- **Scope:** PRD FR-KEY-01, FR-KEY-02, FR-KEY-03, NFR-08, NFR-20; AT-SDK-01/03. Endpoints A24 (`POST /api/projects/:projectId/keys`), A25 (`POST /api/projects/:projectId/keys/:keyId/rotate`), A26 (`POST /api/projects/:projectId/keys/:keyId/revoke`).
+- **Implementation summary:**
+  1. **Cryptographic Random Key Issuance & Digest-Only Persistence (FR-KEY-01, NFR-08):**
+     - Cryptographic key generation format: `dg_ing_<keyId>.<secret>`, where secret is 32 random bytes in base64url.
+     - Persists only SHA-256 digest + safe metadata (`keyId`, `projectId`, `environment`, `prefix`, `status`, `createdAt`, `replacesKeyId`, `label`, `auditEventId`).
+     - Fixed-length timing-safe digest comparisons via `timingSafeEqual`.
+     - Plaintext secret returned only once upon creation/rotation with `Cache-Control: no-store`.
+     - Error messages, audit entries, and project detail listings never return or leak plaintext secret or digest.
+  2. **Active Key Limits & Atomic Rotation (FR-KEY-02, NFR-20):**
+     - Maximum 3 active keys bound per environment (throws 409 `ACTIVE_KEY_LIMIT_REACHED` if exceeded).
+     - Atomic rotation revokes old key and creates replacement, preserving `replacesKeyId`. Rotating an already revoked key throws 409 `KEY_ALREADY_REVOKED`.
+  3. **Idempotent Revocation (FR-KEY-02):**
+     - Revocation marks key as `revoked` and records `revokedAt`.
+     - Repeated revocation returns HTTP 200 with original audit event ID idempotently without emitting duplicate audit events.
+  4. **Shared Ingestion Auth Guard (FR-KEY-03, NFR-08):**
+     - `requireIngestionAuth` verifies Bearer token digest, active status (401 `REVOKED_INGESTION_KEY`), and project/environment scope match (403 `SCOPE_FORBIDDEN`).
+     - Ingestion keys have NO operator, recovery, or provider control privileges.
+  5. **Contracts & Operator UI Integration:**
+     - Added contract schemas in `@driftguard/contracts` for key issuance, rotation, revocation, and metadata.
+     - Extended `ProjectDetailResponseSchema` with `keyMetadata`.
+     - Added Ingestion Keys management panel in web UI with copy-once token modal banner, active key list, rotate, and revoke actions.
+  6. **Single-Commit Verification:**
+     - 85 vitest tests passing across workspace (`vitest run`).
+     - Workspace cleanly built (`pnpm -r run build`).
+     - Planning verification script passed (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `packages/contracts/src/index.ts`
+  - `apps/api/src/services/key-service.ts`
+  - `apps/api/src/services/project-service.ts`
+  - `apps/api/src/app.ts`
+  - `apps/web/src/api-client.ts`
+  - `apps/web/src/App.tsx`
+  - `apps/api/tests/api.test.ts`
+  - `.scratch/driftguard/issues/29-project-ingestion-keys.md`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29.
+  - Next in line in topological order: **Ticket 30** (`soumya240806`: "[P0] 30: Dependency Registration and Inventory").

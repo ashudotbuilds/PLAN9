@@ -230,6 +230,53 @@ export const ListProjectsResponseSchema = z.object({
 });
 export type ListProjectsResponse = z.infer<typeof ListProjectsResponseSchema>;
 
+// Ticket 29: Ingestion Keys (A24, A25, A26)
+export const IngestionKeyStatusSchema = z.enum(['active', 'revoked']);
+export type IngestionKeyStatus = z.infer<typeof IngestionKeyStatusSchema>;
+
+export const IngestionKeyMetadataSchema = z.object({
+  keyId: z.string(),
+  prefix: z.string(),
+  environment: ProjectEnvironmentSchema,
+  status: IngestionKeyStatusSchema,
+  createdAt: z.string().datetime(),
+  replacesKeyId: z.string().nullable().optional(),
+  revokedAt: z.string().datetime().nullable().optional(),
+  label: z.string().optional()
+});
+export type IngestionKeyMetadata = z.infer<typeof IngestionKeyMetadataSchema>;
+
+export const CreateIngestionKeyRequestSchema = z.object({
+  environment: ProjectEnvironmentSchema,
+  label: z.string().max(80).optional()
+});
+export type CreateIngestionKeyRequest = z.infer<typeof CreateIngestionKeyRequestSchema>;
+
+export const CreateIngestionKeyResponseSchema = z.object({
+  keyId: z.string(),
+  apiKey: z.string(),
+  prefix: z.string(),
+  environment: ProjectEnvironmentSchema,
+  auditEventId: z.string()
+});
+export type CreateIngestionKeyResponse = z.infer<typeof CreateIngestionKeyResponseSchema>;
+
+export const RotateIngestionKeyResponseSchema = z.object({
+  keyId: z.string(),
+  apiKey: z.string(),
+  prefix: z.string(),
+  replacesKeyId: z.string(),
+  auditEventId: z.string()
+});
+export type RotateIngestionKeyResponse = z.infer<typeof RotateIngestionKeyResponseSchema>;
+
+export const RevokeIngestionKeyResponseSchema = z.object({
+  keyId: z.string(),
+  status: z.literal('revoked'),
+  auditEventId: z.string()
+});
+export type RevokeIngestionKeyResponse = z.infer<typeof RevokeIngestionKeyResponseSchema>;
+
 // A23: Project Detail
 export const ProjectDetailResponseSchema = z.object({
   project: ProjectSummarySchema,
@@ -238,7 +285,7 @@ export const ProjectDetailResponseSchema = z.object({
     activeSessionId: z.string(),
     lastIngestAt: z.string().nullable()
   }),
-  keyMetadata: z.array(z.unknown()),
+  keyMetadata: z.array(IngestionKeyMetadataSchema),
   collectionPolicy: z.record(z.string(), z.unknown())
 });
 export type ProjectDetailResponse = z.infer<typeof ProjectDetailResponseSchema>;

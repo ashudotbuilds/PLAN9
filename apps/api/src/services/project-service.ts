@@ -31,14 +31,24 @@ interface IdempotencyRecord {
   response: CreateProjectResponse;
 }
 
+import type { KeyService } from './key-service.js';
+
 export class ProjectService {
   private projects = new Map<string, ProjectRecord>();
   private idempotencyStore = new Map<string, IdempotencyRecord>();
   private readonly maxProjects = 20;
 
-  constructor() {
+  constructor(private keyService?: KeyService) {
     // Initialize default demo project
     this.seedDefaultProject();
+  }
+
+  setKeyService(keyService: KeyService): void {
+    this.keyService = keyService;
+  }
+
+  getProjectRecord(projectId: string): ProjectRecord | undefined {
+    return this.projects.get(projectId);
   }
 
   private seedDefaultProject(): void {
@@ -153,7 +163,7 @@ export class ProjectService {
         activeSessionId: envState.activeSessionId,
         lastIngestAt: envState.lastIngestAt
       },
-      keyMetadata: [],
+      keyMetadata: this.keyService ? this.keyService.listKeyMetadata(projectId, environment) : [],
       collectionPolicy: record.collectionPolicy
     };
   }

@@ -41,7 +41,15 @@ import {
   GetRecoveryRunResponseSchema,
   RecoveryRun,
   ProviderSummary,
-  ListProvidersResponseSchema
+  ListProvidersResponseSchema,
+  CreateIngestionKeyResponse,
+  CreateIngestionKeyResponseSchema,
+  RotateIngestionKeyResponse,
+  RotateIngestionKeyResponseSchema,
+  RevokeIngestionKeyResponse,
+  RevokeIngestionKeyResponseSchema,
+  ProjectDetailResponse,
+  ProjectDetailResponseSchema
 } from '@driftguard/contracts';
 
 
@@ -493,6 +501,98 @@ export class ApiClient {
     const data = await res.json();
     const parsed = GetRecoveryRunResponseSchema.parse(data);
     return parsed.recoveryRun;
+  }
+
+  async getProjectDetail(
+    projectId: string,
+    environment?: ProjectEnvironment
+  ): Promise<ProjectDetailResponse> {
+    const query = environment ? `?environment=${environment}` : '';
+    const res = await fetch(`${this.apiBase}/projects/${projectId}${query}`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error?.message || `Failed to fetch project detail: ${res.status}`);
+    }
+
+    const data = await res.json();
+    return ProjectDetailResponseSchema.parse(data);
+  }
+
+  async createIngestionKey(
+    projectId: string,
+    environment: ProjectEnvironment,
+    label?: string
+  ): Promise<CreateIngestionKeyResponse> {
+    const res = await fetch(`${this.apiBase}/projects/${projectId}/keys`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ environment, label })
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      const err = new Error(errorJson.error?.message || `Failed to create ingestion key: ${res.status}`);
+      (err as any).code = errorJson.error?.code;
+      throw err;
+    }
+
+    const data = await res.json();
+    return CreateIngestionKeyResponseSchema.parse(data);
+  }
+
+  async rotateIngestionKey(
+    projectId: string,
+    keyId: string
+  ): Promise<RotateIngestionKeyResponse> {
+    const res = await fetch(`${this.apiBase}/projects/${projectId}/keys/${keyId}/rotate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({})
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      const err = new Error(errorJson.error?.message || `Failed to rotate ingestion key: ${res.status}`);
+      (err as any).code = errorJson.error?.code;
+      throw err;
+    }
+
+    const data = await res.json();
+    return RotateIngestionKeyResponseSchema.parse(data);
+  }
+
+  async revokeIngestionKey(
+    projectId: string,
+    keyId: string
+  ): Promise<RevokeIngestionKeyResponse> {
+    const res = await fetch(`${this.apiBase}/projects/${projectId}/keys/${keyId}/revoke`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({})
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      const err = new Error(errorJson.error?.message || `Failed to revoke ingestion key: ${res.status}`);
+      (err as any).code = errorJson.error?.code;
+      throw err;
+    }
+
+    const data = await res.json();
+    return RevokeIngestionKeyResponseSchema.parse(data);
   }
 }
 

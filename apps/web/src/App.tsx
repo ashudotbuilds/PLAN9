@@ -14,7 +14,8 @@ import {
   ActiveAdapter,
   PostActivationReplayOutcome,
   RecoveryRun,
-  ProviderSummary
+  ProviderSummary,
+  IngestionKeyMetadata
 } from '@driftguard/contracts';
 
 interface AuditTimelineEntry {
@@ -108,6 +109,12 @@ export function App() {
   const [activeRecoveryRun, setActiveRecoveryRun] = useState<RecoveryRun | null>(null);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
+  // Ticket 29: Ingestion Keys (A24, A25, A26)
+  const [keyMetadata, setKeyMetadata] = useState<IngestionKeyMetadata[]>([]);
+  const [issuedApiKey, setIssuedApiKey] = useState<{ keyId: string; apiKey: string } | null>(null);
+  const [issuingKey, setIssuingKey] = useState(false);
+  const [keyError, setKeyError] = useState<string | null>(null);
+
   const recordAudit = (id: string, action: string, summary: string, scope?: string) => {
     setAuditTimeline((prev) => [
       {
@@ -144,6 +151,14 @@ export function App() {
       }
       if (state.activeScenarios) {
         setActiveScenarios(state.activeScenarios);
+      }
+      try {
+        const detail = await apiClient.getProjectDetail(projId, env);
+        if (detail.keyMetadata) {
+          setKeyMetadata(detail.keyMetadata);
+        }
+      } catch {
+        // Ignore
       }
     } catch {
       // Ignore if unauthenticated
@@ -249,6 +264,69 @@ export function App() {
       }
     } finally {
       setCreatingProject(false);
+    }
+  };
+
+  const handleCreateKey = async () => {
+    if (!selectedProjectId) return;
+    setIssuingKey(true);
+    setKeyError(null);
+    try {
+      const res = await apiClient.createIngestionKey(selectedProjectId, selectedEnvironment);
+      setIssuedApiKey({ keyId: res.keyId, apiKey: res.apiKey });
+      setKeyMetadata((prev) => [
+        {
+          keyId: res.keyId,
+          prefix: res.prefix,
+          environment: res.environment,
+          status: 'active',
+          createdAt: new Date().toISOString()
+        },
+        ...prev
+      ]);
+      recordAudit(res.auditEventId, 'issue_key', `Issued ingestion key ${res.keyId} for ${selectedEnvironment}`);
+    } catch (err: any) {
+      setKeyError(err.message);
+    } finally {
+      setIssuingKey(false);
+    }
+  };
+
+  const handleRotateKey = async (keyId: string) => {
+    if (!selectedProjectId) return;
+    setKeyError(null);
+    try {
+      const res = await apiClient.rotateIngestionKey(selectedProjectId, keyId);
+      setIssuedApiKey({ keyId: res.keyId, apiKey: res.apiKey });
+      setKeyMetadata((prev) =>
+        prev
+          .map((k) => (k.keyId === keyId ? { ...k, status: 'revoked' as const, revokedAt: new Date().toISOString() } : k))
+          .concat({
+            keyId: res.keyId,
+            prefix: res.prefix,
+            environment: selectedEnvironment,
+            status: 'active' as const,
+            createdAt: new Date().toISOString(),
+            replacesKeyId: res.replacesKeyId
+          })
+      );
+      recordAudit(res.auditEventId, 'rotate_key', `Rotated ingestion key ${keyId} -> ${res.keyId}`);
+    } catch (err: any) {
+      setKeyError(err.message);
+    }
+  };
+
+  const handleRevokeKey = async (keyId: string) => {
+    if (!selectedProjectId) return;
+    setKeyError(null);
+    try {
+      const res = await apiClient.revokeIngestionKey(selectedProjectId, keyId);
+      setKeyMetadata((prev) =>
+        prev.map((k) => (k.keyId === keyId ? { ...k, status: 'revoked' as const, revokedAt: new Date().toISOString() } : k))
+      );
+      recordAudit(res.auditEventId, 'revoke_key', `Revoked ingestion key ${keyId}`);
+    } catch (err: any) {
+      setKeyError(err.message);
     }
   };
 
@@ -882,6 +960,131 @@ export function App() {
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Ticket 29: Ingestion Keys Management Section (A24, A25, A26) */}
+        <section aria-label="Ingestion Keys" className="bg-[#161b22] border border-[#30363d] rounded p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center space-x-2">
+                <h2 className="text-sm font-semibold text-[#f0f6fc]">Ingestion API Keys (A24/A25/A26)</h2>
+                <span className="px-2 py-0.5 rounded text-xs font-mono font-medium bg-[#1f6feb]/20 text-[#58a6ff] border border-[#1f6feb]/40">
+                  {keyMetadata.filter((k) => k.status === 'active').length} ACTIVE KEYS (MAX 3)
+                </span>
+              </div>
+              <p className="text-xs text-[#8b949e]">
+                Environment-scoped keys for SDK telemetry ingestion. Plaintext is only shown once at creation.
+              </p>
+            </div>
+
+            <button
+              onClick={handleCreateKey}
+              disabled={issuingKey || !selectedProjectId}
+              className="px-3.5 py-1.5 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white rounded text-xs font-medium transition cursor-pointer"
+            >
+              {issuingKey ? 'Issuing Key...' : 'Issue New Key'}
+            </button>
+          </div>
+
+          {keyError && (
+            <div className="p-3 bg-[#da3633]/10 border border-[#da3633]/30 rounded text-[#f85149] font-mono text-xs">
+              {keyError}
+            </div>
+          )}
+
+          {issuedApiKey && (
+            <div className="p-3 bg-[#238636]/10 border border-[#238636]/30 rounded space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-[#3fb950]">ONE-TIME PLAINTEXT API KEY</span>
+                <span className="text-[10px] text-[#8b949e]">Will never be displayed again</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={issuedApiKey.apiKey}
+                  className="w-full bg-[#0d1117] border border-[#30363d] rounded px-2.5 py-1 text-xs font-mono text-[#58a6ff]"
+                />
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard?.writeText(issuedApiKey.apiKey)}
+                  className="px-2.5 py-1 bg-[#21262d] hover:bg-[#30363d] text-white text-xs rounded font-mono"
+                >
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIssuedApiKey(null)}
+                  className="px-2.5 py-1 bg-[#21262d] hover:bg-[#30363d] text-[#8b949e] text-xs rounded"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="overflow-x-auto pt-2 border-t border-[#30363d]">
+            <table className="w-full text-left text-xs font-mono border-collapse">
+              <thead>
+                <tr className="border-b border-[#30363d] text-[#8b949e]">
+                  <th className="py-2 px-3 font-medium">KEY ID</th>
+                  <th className="py-2 px-3 font-medium">PREFIX</th>
+                  <th className="py-2 px-3 font-medium">ENVIRONMENT</th>
+                  <th className="py-2 px-3 font-medium">STATUS</th>
+                  <th className="py-2 px-3 font-medium">CREATED AT</th>
+                  <th className="py-2 px-3 font-medium text-right">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#21262d]">
+                {keyMetadata.map((k) => (
+                  <tr key={k.keyId} className="hover:bg-[#21262d]/50 transition-colors">
+                    <td className="py-2 px-3 text-[#f0f6fc] font-semibold">{k.keyId}</td>
+                    <td className="py-2 px-3 text-[#58a6ff]">{k.prefix}</td>
+                    <td className="py-2 px-3 text-[#c9d1d9]">{k.environment}</td>
+                    <td className="py-2 px-3">
+                      <span
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          k.status === 'active'
+                            ? 'bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40'
+                            : 'bg-[#da3633]/20 text-[#f85149] border border-[#da3633]/40'
+                        }`}
+                      >
+                        {k.status.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-[#8b949e]">{new Date(k.createdAt).toLocaleTimeString()}</td>
+                    <td className="py-2 px-3 text-right space-x-2">
+                      {k.status === 'active' && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleRotateKey(k.keyId)}
+                            className="px-2 py-0.5 bg-[#1f6feb]/20 hover:bg-[#1f6feb]/30 text-[#58a6ff] border border-[#1f6feb]/40 rounded text-[10px]"
+                          >
+                            Rotate
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRevokeKey(k.keyId)}
+                            className="px-2 py-0.5 bg-[#da3633]/20 hover:bg-[#da3633]/30 text-[#f85149] border border-[#da3633]/40 rounded text-[10px]"
+                          >
+                            Revoke
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {keyMetadata.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-3 px-3 text-[#8b949e] text-center">
+                      No ingestion keys created yet. Click &quot;Issue New Key&quot; to generate an environment-scoped key.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

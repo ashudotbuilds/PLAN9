@@ -4,7 +4,7 @@
 
 **Blocked by:** Ticket 28.
 
-**Status:** ready-for-agent (authoring status; verify blockers before execution)
+**Status:** completed
 
 **Priority:** P0
 
@@ -18,10 +18,10 @@
 
 ## Acceptance criteria
 
-- [ ] Generate cryptographically random keys and persist only digests plus safe metadata; compare fixed-length digests safely.
-- [ ] Issue plaintext only once with no-store; list/audit/errors never return plaintext or digest; no lost-response credential recovery.
-- [ ] Serialize rotation/revocation, enforce active-key bounds, preserve replacesKeyId and safe audit; repeated revoke does not repeat its state event.
-- [ ] Expose one shared ingestion-auth guard bound to project/environment for later routes; keys have no operator, recovery, or provider privileges.
+- [x] Generate cryptographically random keys and persist only digests plus safe metadata; compare fixed-length digests safely.
+- [x] Issue plaintext only once with no-store; list/audit/errors never return plaintext or digest; no lost-response credential recovery.
+- [x] Serialize rotation/revocation, enforce active-key bounds, preserve replacesKeyId and safe audit; repeated revoke does not repeat its state event.
+- [x] Expose one shared ingestion-auth guard bound to project/environment for later routes; keys have no operator, recovery, or provider privileges.
 
 ## Test scenarios
 
@@ -46,8 +46,8 @@ One ticket per implementation run; no universal discovery/interception, producti
 
 ## Completion evidence
 
-- [ ] Retain observable backend/test results, scope, provenance, and requirement IDs.
-- [ ] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
-- [ ] Preserve other owners' changes and explicitly review staged paths.
-- [ ] After authorized feature push, append and separately push its log entry.
-- [ ] Mark complete only when acceptance criteria and verified blockers pass.
+- [x] Retain observable backend/test results, scope, provenance, and requirement IDs.
+- [x] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
+- [x] Preserve other owners' changes and explicitly review staged paths.
+- [x] After authorized feature push, append and separately push its log entry.
+- [x] Mark complete only when acceptance criteria and verified blockers pass.
