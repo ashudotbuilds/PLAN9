@@ -327,7 +327,24 @@ Never include credentials or rewrite another contributor's history.
   - `node scripts/validate-planning.mjs`: All 41 tickets, 97 requirements, 37 API routes, and 17 SDK gates validated successfully.
 - **Branch:** `codex/issue-05-bounded-repair-proposal`.
 - **Feature commit:** `37e85ce`.
-- **Confirmed push:** Confirmed push to `origin/codex/issue-05-bounded-repair-proposal`.
+- **Log commit identifier:** `docs: record issue 05 completion in dev log`.
+- **Log publication:** Confirmed pushed at `9440690`.
 
+## 2026-10-11 — Main integration: Issue #5 closure and frontier advancement
 
-
+- **Task:** User authorized fast-forward integration of completed Issue #5 into `main`, closure of GitHub Issue #5, and team frontier update.
+- **Authenticated identity:** ashudotbuilds via GitHub API and Git credentials.
+- **Status:** PUSHED to origin/main; Issue #5 closed on GitHub.
+- **Scope:** Default-branch publication of Ticket 05 implementation and dev log.
+- **Integration:** Fast-forward merged `codex/issue-05-bounded-repair-proposal` (commits `37e85ce` and `9440690`) into `main`. Pushed to `origin/main`. Closed GitHub Issue #5 (state: `closed`, reason: `completed`).
+- **Team Frontier Status:**
+  - Ticket 01 is COMPLETED and closed.
+  - Ticket 28 is COMPLETED and closed.
+  - Ticket 02 is COMPLETED and closed.
+  - Ticket 03 is COMPLETED and closed.
+  - Ticket 04 is COMPLETED and closed.
+  - Ticket 05 is COMPLETED and closed.
+  - Ticket 06 (`AnushkaBhardwaj15`: "Validate candidate adapter in shadow mode") is now UNBLOCKED and ready to start!
+  - Ticket 29 (`saransh-sh`: "Issue rotate and revoke environment-scoped ingestion keys") is also UNBLOCKED.
+- **Log commit identifier:** `docs: record issue 05 main integration and closure in dev log`.
+- **Log publication:** Confirmed pushed at `main`.
