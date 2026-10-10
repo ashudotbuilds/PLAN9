@@ -719,6 +719,122 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(detail.beforeEvidence.users).toBeDefined();
       expect(detail.afterEvidence.users).toBeDefined();
       expect(detail.failedWorkflows.length).toBe(2);
+
+      // 7. Analyze impact (A09 - Ticket 04)
+      const impactRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/analyze-impact`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_1' }
+      });
+      expect(impactRes.statusCode).toBe(200);
+      const impact = impactRes.json();
+      expect(impact.status).toBe('completed');
+      expect(impact.incidentId).toBe(incidentId);
+
+      // Verify affected workflows
+      const affectedIds = impact.affectedWorkflows.map((w: any) => w.workflowId);
+      expect(affectedIds).toContain('welcome_email');
+      expect(affectedIds).toContain('customer_profile');
+      expect(affectedIds).not.toContain('inventory_sync');
+      expect(affectedIds).not.toContain('delivery_estimate');
+
+      const welcomeImpact = impact.affectedWorkflows.find((w: any) => w.workflowId === 'welcome_email');
+      expect(welcomeImpact.status).toBe('affected');
+      expect(welcomeImpact.canonicalField).toBe('displayName');
+      expect(welcomeImpact.providerField).toBe('name');
+      expect(welcomeImpact.invariant).toBe('nonempty_recipient_matches_baseline');
+      expect(welcomeImpact.provenance).toBe('runtime_read');
+
+      // Verify unaffected workflows
+      const unaffectedIds = impact.unaffectedWorkflows.map((w: any) => w.workflowId);
+      expect(unaffectedIds).toContain('inventory_sync');
+      expect(unaffectedIds).toContain('delivery_estimate');
+      const invImpact = impact.unaffectedWorkflows.find((w: any) => w.workflowId === 'inventory_sync');
+      expect(invImpact.status).toBe('unaffected');
+      expect(invImpact.provenance).toBe('runtime_read');
+
+      // Verify trace paths
+      expect(impact.tracePaths.length).toBe(2);
+      expect(impact.tracePaths[0].provider).toBe('users');
+      expect(impact.tracePaths[0].endpoint).toBe('/api/v1/users');
+      expect(impact.tracePaths[0].declaredClient).toBe('users-client-sdk');
+      expect(impact.tracePaths[0].canonicalAdapter).toBe('CanonicalUserAdapter');
+
+      // 8. Re-fetch incident detail (A08) verifies impact analysis is retained
+      const detailWithImpactRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/incidents/${incidentId}?projectId=prj_demo_default&environment=development`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      expect(detailWithImpactRes.statusCode).toBe(200);
+      expect(detailWithImpactRes.json().incident.impactAnalysis).toBeDefined();
+      expect(detailWithImpactRes.json().incident.impactAnalysis.affectedWorkflows.length).toBe(2);
+    });
+
+    it('returns 404 INCIDENT_NOT_FOUND when analyzing non-existent incident', async () => {
+      const mockFetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }));
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/incidents/inc_nonexistent/analyze-impact',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error.code).toBe('INCIDENT_NOT_FOUND');
+    });
+
+    it('returns insufficient_evidence and unknown workflows when baseline lineage is missing', async () => {
+      const mockFetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }));
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+
+      // Inject scenario and observe without baseline should fail observations or if baseline not captured
+      // Manually add incident to test isolated lineage-missing impact analysis
+      (incidentService as any).incidents.set('inc_test', {
+        id: 'inc_test',
+        projectId: 'prj_demo_default',
+        environment: 'development',
+        sessionId: 'sess_1',
+        provider: 'users',
+        endpoint: '/api/v1/users',
+        fingerprint: 'fp_test',
+        status: 'open',
+        severity: 'high',
+        summary: 'Drift test',
+        detectedAt: new Date().toISOString(),
+        evidenceStrength: 'confirmed',
+        affectedWorkflows: ['welcome_email'],
+        findings: [],
+        beforeEvidence: {},
+        afterEvidence: {},
+        failedWorkflows: [],
+        auditEventId: 'aud_1'
+      });
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/incidents/inc_test/analyze-impact',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_1' }
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.status).toBe('insufficient_evidence');
+      expect(body.affectedWorkflows.length).toBe(0);
+      expect(body.unknownWorkflows.length).toBe(4);
+      expect(body.unknownWorkflows.every((w: any) => w.status === 'unknown')).toBe(true);
     });
   });
 });

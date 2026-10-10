@@ -7,7 +7,8 @@ import {
   DependencyEdge,
   ReplayWorkflowResponse,
   IncidentSummary,
-  IncidentDetail
+  IncidentDetail,
+  AnalyzeImpactResponse
 } from '@driftguard/contracts';
 
 export function App() {
@@ -46,6 +47,11 @@ export function App() {
   const [selectedIncident, setSelectedIncident] = useState<IncidentDetail | null>(null);
   const [incidentLoading, setIncidentLoading] = useState(false);
   const [incidentError, setIncidentError] = useState<string | null>(null);
+
+  // Ticket 04: Impact Analysis & Lineage Trace
+  const [analyzingImpact, setAnalyzingImpact] = useState(false);
+  const [impactAnalysis, setImpactAnalysis] = useState<AnalyzeImpactResponse | null>(null);
+  const [impactError, setImpactError] = useState<string | null>(null);
 
 
   const fetchStatus = async () => {
@@ -220,10 +226,33 @@ export function App() {
     try {
       const detail = await apiClient.getIncident(id, selectedProjectId, selectedEnvironment);
       setSelectedIncident(detail);
+      if (detail.impactAnalysis) {
+        setImpactAnalysis(detail.impactAnalysis);
+      } else {
+        setImpactAnalysis(null);
+      }
     } catch (err) {
       alert((err as Error).message);
     } finally {
       setIncidentLoading(false);
+    }
+  };
+
+  const handleAnalyzeImpact = async (incidentId: string) => {
+    setAnalyzingImpact(true);
+    setImpactError(null);
+    try {
+      const res = await apiClient.analyzeImpact(
+        incidentId,
+        selectedProjectId,
+        selectedEnvironment
+      );
+      setImpactAnalysis(res);
+      setSelectedIncident((prev) => (prev ? { ...prev, impactAnalysis: res } : null));
+    } catch (err) {
+      setImpactError((err as Error).message || 'Failed to analyze impact.');
+    } finally {
+      setAnalyzingImpact(false);
     }
   };
 
@@ -751,6 +780,125 @@ export function App() {
                         • <span className="font-semibold text-[#e3b341]">{wf.workflowId}</span>: {wf.reason}
                       </div>
                     ))}
+                  </div>
+
+                  {/* Ticket 04: Impact Analysis & Lineage Trace (A09) */}
+                  <div className="pt-3 border-t border-[#21262d] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h5 className="text-xs font-semibold text-[#f0f6fc]">
+                          Workflow Lineage & Impact Analysis (A09)
+                        </h5>
+                        <p className="text-[11px] text-[#8b949e]">
+                          Traced across runtime read edges: provider → client → adapter → workflow
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleAnalyzeImpact(selectedIncident.id)}
+                        disabled={analyzingImpact}
+                        className="px-3 py-1 bg-[#1f6feb] hover:bg-[#388bfd] disabled:opacity-50 text-white rounded text-xs font-medium transition cursor-pointer"
+                      >
+                        {analyzingImpact ? 'Analyzing Impact...' : 'Analyze Workflow Impact (A09)'}
+                      </button>
+                    </div>
+
+                    {impactError && (
+                      <div className="p-2 bg-[#da3633]/10 border border-[#da3633]/30 rounded text-[#f85149] font-mono text-xs">
+                        {impactError}
+                      </div>
+                    )}
+
+                    {(impactAnalysis || selectedIncident.impactAnalysis) && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          {/* Column 1: Affected Workflows */}
+                          <div className="bg-[#161b22] border border-[#da3633]/30 rounded p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-[#f85149]">
+                                {`AFFECTED WORKFLOWS (${(impactAnalysis || selectedIncident.impactAnalysis)?.affectedWorkflows.length || 0})`}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#da3633]/20 text-[#f85149] font-mono">
+                                runtime_read
+                              </span>
+                            </div>
+                            <div className="space-y-2 text-xs">
+                              {(impactAnalysis || selectedIncident.impactAnalysis)?.affectedWorkflows.map((wf) => (
+                                <div key={wf.workflowId} className="p-2 bg-[#0d1117] border border-[#da3633]/20 rounded space-y-1 font-mono">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-semibold text-[#f0f6fc]">{wf.workflowId}</span>
+                                    <span className="text-[10px] text-[#e3b341]">{`canonical: ${wf.canonicalField}`}</span>
+                                  </div>
+                                  <div className="text-[11px] text-[#f85149]">{wf.changedBehavior}</div>
+                                  <div className="text-[10px] text-[#8b949e]">Invariant: {wf.invariant}</div>
+                                </div>
+                              ))}
+                              {(impactAnalysis || selectedIncident.impactAnalysis)?.affectedWorkflows.length === 0 && (
+                                <p className="text-[#8b949e] text-xs">No workflows affected.</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Column 2: Unaffected Workflows */}
+                          <div className="bg-[#161b22] border border-[#238636]/30 rounded p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-[#3fb950]">
+                                {`UNAFFECTED WORKFLOWS (${(impactAnalysis || selectedIncident.impactAnalysis)?.unaffectedWorkflows.length || 0})`}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#238636]/20 text-[#3fb950] font-mono">
+                                excluded
+                              </span>
+                            </div>
+                            <div className="space-y-2 text-xs">
+                              {(impactAnalysis || selectedIncident.impactAnalysis)?.unaffectedWorkflows.map((wf) => (
+                                <div key={wf.workflowId} className="p-2 bg-[#0d1117] border border-[#238636]/20 rounded space-y-1 font-mono">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-semibold text-[#f0f6fc]">{wf.workflowId}</span>
+                                    <span className="text-[10px] text-[#3fb950]">CLEAN</span>
+                                  </div>
+                                  <div className="text-[11px] text-[#8b949e]">{wf.reason}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Column 3: Full Trace Paths */}
+                          <div className="bg-[#161b22] border border-[#58a6ff]/30 rounded p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-[#58a6ff]">
+                                {`LINEAGE TRACE PATHS (${(impactAnalysis || selectedIncident.impactAnalysis)?.tracePaths.length || 0})`}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#58a6ff]/20 text-[#58a6ff] font-mono">
+                                verified
+                              </span>
+                            </div>
+                            <div className="space-y-2 text-xs">
+                              {(impactAnalysis || selectedIncident.impactAnalysis)?.tracePaths.map((tp, idx) => (
+                                <div key={idx} className="p-2 bg-[#0d1117] border border-[#58a6ff]/20 rounded space-y-1 font-mono text-[11px]">
+                                  <div className="text-[#58a6ff] font-semibold">
+                                    {tp.provider} <span className="text-[#8b949e]">({tp.endpoint})</span>
+                                  </div>
+                                  <div className="text-[#8b949e]">↓ client: <span className="text-[#c9d1d9]">{tp.declaredClient}</span></div>
+                                  <div className="text-[#8b949e]">↓ adapter: <span className="text-[#c9d1d9]">{tp.canonicalAdapter}</span></div>
+                                  <div className="text-[#e3b341] font-semibold">→ workflow: {tp.workflow}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* If unknown workflows */}
+                        {((impactAnalysis || selectedIncident.impactAnalysis)?.unknownWorkflows.length || 0) > 0 && (
+                          <div className="p-3 bg-[#e3b341]/10 border border-[#e3b341]/30 rounded text-xs font-mono space-y-1">
+                            <span className="text-[#e3b341] font-bold block">Unknown / Insufficient Evidence Workflows:</span>
+                            {(impactAnalysis || selectedIncident.impactAnalysis)?.unknownWorkflows.map((wf) => (
+                              <div key={wf.workflowId} className="text-[#c9d1d9] text-[11px]">
+                                • <span className="text-[#e3b341] font-semibold">{wf.workflowId}</span>: {wf.reason}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

@@ -408,6 +408,57 @@ export const ListIncidentsResponseSchema = z.object({
 });
 export type ListIncidentsResponse = z.infer<typeof ListIncidentsResponseSchema>;
 
+// Ticket 04: Impact Analysis & Lineage Tracing (A09)
+export const LineageProvenanceSchema = z.enum([
+  'runtime_read',
+  'declared',
+  'inferred',
+  'manually_configured'
+]);
+export type LineageProvenance = z.infer<typeof LineageProvenanceSchema>;
+
+export const ImpactStatusSchema = z.enum(['affected', 'unaffected', 'unknown']);
+export type ImpactStatus = z.infer<typeof ImpactStatusSchema>;
+
+export const WorkflowImpactSchema = z.object({
+  workflowId: WorkflowIdSchema,
+  status: ImpactStatusSchema,
+  reason: z.string(),
+  canonicalField: z.string().optional(),
+  providerField: z.string().optional(),
+  changedBehavior: z.string().optional(),
+  invariant: z.string().optional(),
+  provenance: LineageProvenanceSchema,
+  evidenceRefs: z.array(z.string())
+});
+export type WorkflowImpact = z.infer<typeof WorkflowImpactSchema>;
+
+export const TracePathSchema = z.object({
+  provider: z.string(),
+  endpoint: z.string(),
+  declaredClient: z.string(),
+  canonicalAdapter: z.string(),
+  workflow: WorkflowIdSchema,
+  provenance: LineageProvenanceSchema,
+  evidenceRefs: z.array(z.string())
+});
+export type TracePath = z.infer<typeof TracePathSchema>;
+
+export const AnalyzeImpactRequestSchema = z.object({});
+export type AnalyzeImpactRequest = z.infer<typeof AnalyzeImpactRequestSchema>;
+
+export const AnalyzeImpactResponseSchema = z.object({
+  incidentId: z.string(),
+  analyzedAt: z.string().datetime(),
+  status: z.enum(['completed', 'insufficient_evidence', 'unknown']),
+  affectedWorkflows: z.array(WorkflowImpactSchema),
+  unaffectedWorkflows: z.array(WorkflowImpactSchema),
+  unknownWorkflows: z.array(WorkflowImpactSchema),
+  tracePaths: z.array(TracePathSchema),
+  auditEventId: z.string()
+});
+export type AnalyzeImpactResponse = z.infer<typeof AnalyzeImpactResponseSchema>;
+
 export const IncidentDetailSchema = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -431,6 +482,7 @@ export const IncidentDetailSchema = z.object({
       reason: z.string()
     })
   ),
+  impactAnalysis: AnalyzeImpactResponseSchema.optional(),
   auditEventId: z.string()
 });
 export type IncidentDetail = z.infer<typeof IncidentDetailSchema>;
@@ -455,5 +507,6 @@ export const RunObservationsResponseSchema = z.object({
   auditEventId: z.string()
 });
 export type RunObservationsResponse = z.infer<typeof RunObservationsResponseSchema>;
+
 
 

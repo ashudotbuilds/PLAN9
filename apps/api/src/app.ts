@@ -435,6 +435,22 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     return { incident };
   });
 
+  // A09: Analyze Incident Impact
+  app.post('/api/incidents/:incidentId/analyze-impact', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const { incidentId } = request.params as { incidentId: string };
+    const query = request.query as { projectId?: string; environment?: string; sessionId?: string };
+    const body = (request.body as { projectId?: string; environment?: string; sessionId?: string } | undefined) || {};
+
+    const envCandidate = body.environment || query.environment;
+    const envParsed = envCandidate ? ProjectEnvironmentSchema.safeParse(envCandidate) : null;
+    const environment = envParsed && envParsed.success ? envParsed.data : 'development';
+    const projectId = body.projectId || query.projectId || 'prj_demo_default';
+    const sessionId = body.sessionId || query.sessionId;
+
+    const result = incidentService.analyzeImpact(incidentId, projectId, environment, sessionId);
+    return reply.status(200).send(result);
+  });
+
   return app;
 }
 

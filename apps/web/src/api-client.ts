@@ -25,7 +25,9 @@ import {
   IncidentSummary,
   ListIncidentsResponseSchema,
   IncidentDetail,
-  IncidentDetailResponseSchema
+  IncidentDetailResponseSchema,
+  AnalyzeImpactResponse,
+  AnalyzeImpactResponseSchema
 } from '@driftguard/contracts';
 
 
@@ -294,6 +296,30 @@ export class ApiClient {
     const data = await res.json();
     const parsed = IncidentDetailResponseSchema.parse(data);
     return parsed.incident;
+  }
+
+  async analyzeImpact(
+    incidentId: string,
+    projectId: string,
+    environment: ProjectEnvironment,
+    sessionId?: string
+  ): Promise<AnalyzeImpactResponse> {
+    const res = await fetch(`${this.apiBase}/incidents/${incidentId}/analyze-impact`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ projectId, environment, sessionId })
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error?.message || `Failed to analyze impact: ${res.status}`);
+    }
+
+    const data = await res.json();
+    return AnalyzeImpactResponseSchema.parse(data);
   }
 }
 

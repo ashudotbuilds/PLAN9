@@ -265,6 +265,140 @@ describe('Web App - Operational Canvas & Operator Onboarding', () => {
 
     expect(screen.getByText(/Breaking schema change: provider field 'name' renamed/)).toBeInTheDocument();
   });
+
+  it('allows analyzing incident impact and renders 3-column lineage trace', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        id: 'prj_test_1',
+        name: 'Test Project',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        environments: ['development', 'production']
+      }
+    ]);
+    vi.spyOn(apiClient, 'getDemoState').mockResolvedValue({
+      projectId: 'prj_test_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      status: 'ready',
+      providers: [],
+      baseline: {
+        id: 'base_1',
+        projectId: 'prj_test_1',
+        environment: 'development',
+        sessionId: 'sess_1',
+        version: 1,
+        fingerprint: 'abc1234567890def',
+        capturedAt: '2026-10-11T01:00:00.000Z',
+        status: 'captured',
+        fixtures: { usersCount: 3, inventoryItemsCount: 3, shippingCalculated: true }
+      },
+      incidents: [
+        {
+          id: 'inc_123',
+          projectId: 'prj_test_1',
+          environment: 'development',
+          sessionId: 'sess_1',
+          provider: 'users',
+          endpoint: '/users/:id',
+          fingerprint: 'fingerprint_123',
+          status: 'detected',
+          severity: 'high',
+          summary: "Breaking schema change: provider field 'name' renamed to 'display_name'",
+          detectedAt: '2026-10-11T01:30:00.000Z',
+          evidenceStrength: 'confirmed',
+          affectedWorkflows: ['welcome_email', 'customer_profile']
+        }
+      ]
+    });
+    vi.spyOn(apiClient, 'getIncident').mockResolvedValue({
+      id: 'inc_123',
+      projectId: 'prj_test_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      provider: 'users',
+      endpoint: '/users/:id',
+      fingerprint: 'fingerprint_123',
+      status: 'detected',
+      severity: 'high',
+      summary: "Breaking schema change: provider field 'name' renamed to 'display_name'",
+      detectedAt: '2026-10-11T01:30:00.000Z',
+      evidenceStrength: 'confirmed',
+      affectedWorkflows: ['welcome_email', 'customer_profile'],
+      findings: [],
+      beforeEvidence: { users: [] },
+      afterEvidence: { users: [] },
+      failedWorkflows: [
+        { workflowId: 'welcome_email', reason: 'Missing name' }
+      ],
+      auditEventId: 'aud_inc_1'
+    });
+    const analyzeSpy = vi.spyOn(apiClient, 'analyzeImpact').mockResolvedValue({
+      incidentId: 'inc_123',
+      analyzedAt: '2026-10-11T01:45:00.000Z',
+      status: 'completed',
+      affectedWorkflows: [
+        {
+          workflowId: 'welcome_email',
+          status: 'affected',
+          reason: 'Read edge confirmed displayName dependency on drifted name',
+          canonicalField: 'displayName',
+          providerField: 'name',
+          changedBehavior: "Field 'name' was renamed to 'display_name'",
+          invariant: 'nonempty_recipient_matches_baseline',
+          provenance: 'runtime_read',
+          evidenceRefs: ['inc_123']
+        }
+      ],
+      unaffectedWorkflows: [
+        {
+          workflowId: 'inventory_sync',
+          status: 'unaffected',
+          reason: 'Consumes inventory items only',
+          provenance: 'runtime_read',
+          evidenceRefs: ['inc_123']
+        }
+      ],
+      unknownWorkflows: [],
+      tracePaths: [
+        {
+          provider: 'users',
+          endpoint: '/api/v1/users',
+          declaredClient: 'users-client-sdk',
+          canonicalAdapter: 'CanonicalUserAdapter',
+          workflow: 'welcome_email',
+          provenance: 'runtime_read',
+          evidenceRefs: ['inc_123']
+        }
+      ],
+      auditEventId: 'aud_impact_1'
+    });
+
+    render(<App />);
+
+    // Click the incident badge to open inspection drawer
+    const incidentCard = await screen.findByText(/Breaking schema change: provider field 'name' renamed/);
+    fireEvent.click(incidentCard);
+
+    // Verify incident drawer is open
+    await waitFor(() => {
+      expect(screen.getByText(/Incident Evidence Inspection \(A08\)/)).toBeInTheDocument();
+    });
+
+    // Click Analyze Workflow Impact button
+    const analyzeBtn = screen.getByRole('button', { name: /analyze workflow impact/i });
+    fireEvent.click(analyzeBtn);
+
+    expect(analyzeSpy).toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(screen.getByText(/canonical: displayName/)).toBeInTheDocument();
+      expect(screen.getByText(/Consumes inventory items only/)).toBeInTheDocument();
+    });
+  });
 });
 
 
