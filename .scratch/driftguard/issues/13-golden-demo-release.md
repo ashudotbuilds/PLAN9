@@ -10,7 +10,7 @@
 
 **Priority:** P0
 
-**Owner:** `AnushkaBhardwaj15`
+**Owner:** `soumya240806`
 
 **GitHub issue:** [#13](https://github.com/ashudotbuilds/PLAN9/issues/13)
 

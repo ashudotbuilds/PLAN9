@@ -8,7 +8,7 @@
 
 **Priority:** P1
 
-**Owner:** `ashudotbuilds`
+**Owner:** `soumya240806`
 
 **Applications/packages touched:** fixtures, apps/api, packages/contracts, packages/lineage.
 

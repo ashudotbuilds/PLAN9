@@ -10,7 +10,7 @@
 
 **Priority:** P2 - outside the 24-hour demo
 
-**Owner:** `saransh-sh`
+**Owner:** `soumya240806`
 
 **GitHub issue:** [#23](https://github.com/ashudotbuilds/PLAN9/issues/23)
 

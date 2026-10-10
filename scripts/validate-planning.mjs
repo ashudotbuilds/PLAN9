@@ -82,7 +82,7 @@ for (const requirement of requirements) {
   const actual = unique(matches(row, /\[(\d{2})\]\(issues\//g)).sort();
   assert.deepEqual(actual, tickets.filter(ticket => ticket.requirements.includes(requirement)).map(ticket => ticket.id).sort(), `Coverage drift ${requirement}`);
 }
-const counts = Object.fromEntries(['ashudotbuilds', 'saransh-sh', 'AnushkaBhardwaj15', 'chandrabhan-kushwaha'].map(owner => [owner, tickets.filter(ticket => ticket.owner === owner).length]));
+const counts = Object.fromEntries(['ashudotbuilds', 'saransh-sh', 'AnushkaBhardwaj15', 'chandrabhan-kushwaha', 'soumya240806'].map(owner => [owner, tickets.filter(ticket => ticket.owner === owner).length]));
 assert.equal(Object.values(counts).reduce((a, b) => a + b, 0), tickets.length, 'Unknown owner');
 assert(Math.max(...Object.values(counts)) - Math.min(...Object.values(counts)) <= 1, 'Unbalanced assignment');
 function gatedOnRelease(id) {

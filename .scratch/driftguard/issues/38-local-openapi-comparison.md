@@ -8,7 +8,7 @@
 
 **Priority:** P1
 
-**Owner:** `saransh-sh`
+**Owner:** `soumya240806`
 
 **Applications/packages touched:** apps/api, packages/contracts, packages/detector.
 

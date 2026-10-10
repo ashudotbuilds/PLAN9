@@ -18,10 +18,10 @@ Read [agent.md](agent.md) and the [PRD](DRIFTGUARD_PRD.md), then use the
 Ticket numbers are local planning IDs; each ticket records its actual GitHub issue.
 Verify live issue ownership and every blocker before starting.
 
-The plan assigns 11 tickets to Ashutosh (`ashudotbuilds`) and 10 each to Saransh
-(`saransh-sh`), Anushka (`AnushkaBhardwaj15`), and Chandrabhan
-(`chandrabhan-kushwaha`). Counts balance backlog ownership, not effort or simultaneous
-readiness. P2 remains deferred.
+The plan assigns 9 tickets to Ashutosh (`ashudotbuilds`) and 8 each to Saransh
+(`saransh-sh`), Anushka (`AnushkaBhardwaj15`), Chandrabhan
+(`chandrabhan-kushwaha`), and Soumya (`soumya240806`). Counts balance backlog
+ownership, not effort or simultaneous readiness. P2 remains deferred.
 
 ## Product contracts
 

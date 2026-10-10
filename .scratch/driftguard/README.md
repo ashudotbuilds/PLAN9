@@ -2,7 +2,7 @@
 
 Source: [PRD](../../DRIFTGUARD_PRD.md). Planned work, not completed implementation.
 41 tickets: 21 P0 slices, 14 optional P1 extensions, 6 deferred P2 briefs.
-Ashutosh has 11; Saransh, Anushka and Chandrabhan have 10 each. Equal counts do not imply equal effort.
+Ashutosh has 9; Saransh, Anushka, Chandrabhan and Soumya have 8 each. Equal counts do not imply equal effort.
 
 ## Ticket index
 
@@ -24,17 +24,17 @@ IDs are preserved; follow blocking edges, not numeric order. Authoring status
 | [10 — Detect unchanged-schema shipping drift and hold repair](issues/10-shipping-semantic-refusal.md) | P0 | `ashudotbuilds` | 04, 06 | [#10](https://github.com/ashudotbuilds/PLAN9/issues/10) |
 | [11 — Reset to a fresh session and preserve completed evidence](issues/11-archive-reset-and-recapture.md) | P0 | `AnushkaBhardwaj15` | 08, 10, 31 | [#11](https://github.com/ashudotbuilds/PLAN9/issues/11) |
 | [12 — Keep failures bounded and explainable across the demo](issues/12-error-evidence-and-bounds.md) | P0 | `AnushkaBhardwaj15` | 08, 11, 33 | [#12](https://github.com/ashudotbuilds/PLAN9/issues/12) |
-| [13 — Prove and rehearse the complete three-minute demo](issues/13-golden-demo-release.md) | P0 | `AnushkaBhardwaj15` | 09, 10, 11, 12, 35 | [#13](https://github.com/ashudotbuilds/PLAN9/issues/13) |
+| [13 — Prove and rehearse the complete three-minute demo](issues/13-golden-demo-release.md) | P0 | `soumya240806` | 09, 10, 11, 12, 35 | [#13](https://github.com/ashudotbuilds/PLAN9/issues/13) |
 | [14 — Generate proposals through an optional live model](issues/14-optional-live-repair-model.md) | P1 | `saransh-sh` | 13 | [#14](https://github.com/ashudotbuilds/PLAN9/issues/14) |
-| [15 — Detect an inventory pagination protocol change](issues/15-pagination-drift-detection.md) | P1 | `ashudotbuilds` | 13 | [#15](https://github.com/ashudotbuilds/PLAN9/issues/15) |
+| [15 — Detect an inventory pagination protocol change](issues/15-pagination-drift-detection.md) | P1 | `soumya240806` | 13 | [#15](https://github.com/ashudotbuilds/PLAN9/issues/15) |
 | [16 — Validate an optional bounded pagination strategy](issues/16-pagination-strategy-repair.md) | P1 | `saransh-sh` | 15 | [#16](https://github.com/ashudotbuilds/PLAN9/issues/16) |
 | [17 — Detect rate limits and propose safe bounded handling](issues/17-rate-limit-evidence.md) | P1 | `ashudotbuilds` | 13 | [#17](https://github.com/ashudotbuilds/PLAN9/issues/17) |
-| [18 — Export a version-consistent evidence passport](issues/18-export-evidence-passport.md) | P1 | `chandrabhan-kushwaha` | 13 | [#18](https://github.com/ashudotbuilds/PLAN9/issues/18) |
+| [18 — Export a version-consistent evidence passport](issues/18-export-evidence-passport.md) | P1 | `soumya240806` | 13 | [#18](https://github.com/ashudotbuilds/PLAN9/issues/18) |
 | [19 — Stream actual recovery events to the dashboard](issues/19-live-event-updates.md) | P1 | `chandrabhan-kushwaha` | 13 | [#19](https://github.com/ashudotbuilds/PLAN9/issues/19) |
-| [20 — Add an impact graph only when it improves comprehension](issues/20-optional-impact-graph.md) | P1 | `chandrabhan-kushwaha` | 13 | [#20](https://github.com/ashudotbuilds/PLAN9/issues/20) |
+| [20 — Add an impact graph only when it improves comprehension](issues/20-optional-impact-graph.md) | P1 | `soumya240806` | 13 | [#20](https://github.com/ashudotbuilds/PLAN9/issues/20) |
 | [21 — Extend the adapter DSL with explicitly validated operations](issues/21-extended-adapter-operations.md) | P1 | `AnushkaBhardwaj15` | 13 | [#21](https://github.com/ashudotbuilds/PLAN9/issues/21) |
 | [22 — Design an opt-in production compatibility proxy or gateway](issues/22-real-provider-instrumentation.md) | P2 | `chandrabhan-kushwaha` | 13 | [#22](https://github.com/ashudotbuilds/PLAN9/issues/22) |
-| [23 — Observe webhook and MCP behavior](issues/23-webhook-and-mcp-adapters.md) | P2 | `saransh-sh` | 13 | [#23](https://github.com/ashudotbuilds/PLAN9/issues/23) |
+| [23 — Observe webhook and MCP behavior](issues/23-webhook-and-mcp-adapters.md) | P2 | `soumya240806` | 13 | [#23](https://github.com/ashudotbuilds/PLAN9/issues/23) |
 | [24 — Learn statistical baselines from larger traffic samples](issues/24-statistical-behavior-baselines.md) | P2 | `AnushkaBhardwaj15` | 13 | [#24](https://github.com/ashudotbuilds/PLAN9/issues/24) |
 | [25 — Stage production activation and connect approval workflows](issues/25-production-canary-and-approvals.md) | P2 | `chandrabhan-kushwaha` | 13 | [#25](https://github.com/ashudotbuilds/PLAN9/issues/25) |
 | [26 — Isolate production organizations and enforce tenant policy](issues/26-organization-policy-and-tenancy.md) | P2 | `chandrabhan-kushwaha` | 13 | [#26](https://github.com/ashudotbuilds/PLAN9/issues/26) |
@@ -49,10 +49,10 @@ IDs are preserved; follow blocking edges, not numeric order. Authoring status
 | [35 — Verify connected SDK security and both recovery scenarios together](issues/35-connected-demo-acceptance.md) | P0 | `AnushkaBhardwaj15` | 10, 11, 12, 33, 34 | [#35](https://github.com/ashudotbuilds/PLAN9/issues/35) |
 | [36 — Instrument one explicitly supported HTTP client](issues/36-supported-http-instrumentation.md) | P1 | `chandrabhan-kushwaha` | 13 | [#36](https://github.com/ashudotbuilds/PLAN9/issues/36) |
 | [37 — Poll only explicitly approved safe dependency endpoints](issues/37-safe-configured-polling.md) | P1 | `ashudotbuilds` | 13 | [#37](https://github.com/ashudotbuilds/PLAN9/issues/37) |
-| [38 — Compare a bounded local OpenAPI import with observed behavior](issues/38-local-openapi-comparison.md) | P1 | `saransh-sh` | 13 | [#38](https://github.com/ashudotbuilds/PLAN9/issues/38) |
-| [39 — Attach explicit package version metadata to registered integrations](issues/39-package-version-metadata.md) | P1 | `AnushkaBhardwaj15` | 13 | [#39](https://github.com/ashudotbuilds/PLAN9/issues/39) |
+| [38 — Compare a bounded local OpenAPI import with observed behavior](issues/38-local-openapi-comparison.md) | P1 | `soumya240806` | 13 | [#38](https://github.com/ashudotbuilds/PLAN9/issues/38) |
+| [39 — Attach explicit package version metadata to registered integrations](issues/39-package-version-metadata.md) | P1 | `soumya240806` | 13 | [#39](https://github.com/ashudotbuilds/PLAN9/issues/39) |
 | [40 — Observe authorized public identity-provider metadata](issues/40-public-auth-provider-metadata.md) | P1 | `AnushkaBhardwaj15` | 13, 37 | [#40](https://github.com/ashudotbuilds/PLAN9/issues/40) |
-| [41 — Demonstrate one authorized mock MCP tool-schema change](issues/41-mock-mcp-dependency-fixture.md) | P1 | `ashudotbuilds` | 13 | [#41](https://github.com/ashudotbuilds/PLAN9/issues/41) |
+| [41 — Demonstrate one authorized mock MCP tool-schema change](issues/41-mock-mcp-dependency-fixture.md) | P1 | `soumya240806` | 13 | [#41](https://github.com/ashudotbuilds/PLAN9/issues/41) |
 
 ## Build order and release gates
 

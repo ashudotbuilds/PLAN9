@@ -10,7 +10,7 @@
 
 **Priority:** P1 - optional after P0 acceptance is stable
 
-**Owner:** `ashudotbuilds`
+**Owner:** `soumya240806`
 
 **GitHub issue:** [#15](https://github.com/ashudotbuilds/PLAN9/issues/15)
 

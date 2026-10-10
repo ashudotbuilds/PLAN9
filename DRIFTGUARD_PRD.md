@@ -221,7 +221,7 @@ These are acceptance targets, not claims about results that have not yet been me
 | Provider list is not a customer inventory | Dependency identity/provenance/version and project/environment scope separate registration from runtime activity. |
 | Metadata does not prove semantics | Evidence levels, compatible fixture contexts, explicit baseline promotion, and existing controlled probes/lineage remain required. |
 | Reset could invalidate onboarding or accept old telemetry | Configuration survives; sessions fence stale events; archived audit and original reset invariants remain intact. |
-| Five-role plan conflicts with current four-person team | Four contributors coordinate by live issue ownership; this PRD does not silently reassign their tickets. |
+| Role-based plan needs concrete contributor ownership | Five contributors coordinate by live issue ownership; explicit assignment changes are reflected in the ticket index. |
 
 Assumptions: one local Node runtime with native fetch, three loopback mock services,
 one API writer, an operator-configured secret, synthetic fixture data, and no production
@@ -1652,7 +1652,7 @@ completion claims. Drop every optional feature at H16 if any P0 gate is incomple
 freeze feature additions at H19 in all cases. Use the remaining window for P0 defects,
 security, and rehearsal. If still incomplete, name the missing gates honestly.
 
-### 24.2 Coordination for the current four contributors
+### 24.2 Coordination for the current five contributors
 
 | Owner | Coordination scope (live issue assignment remains authoritative) | Critical files | Exit criterion |
 |---|---|---|---|
@@ -1660,9 +1660,10 @@ security, and rehearsal. If still incomplete, name the missing gates honestly.
 | Saransh (`saransh-sh`) | Behavior evidence, lineage, constrained repair, protocol/security review | Observer/detector/lineage/repair/validation packages | Correct evidence and gates; no semantic or authentication bypass. |
 | Anushka (`AnushkaBhardwaj15`) | Operator dashboard/onboarding composition, reset/reliability, regression and rehearsal | `apps/web`, acceptance tests, docs | Real backend states, usable onboarding, repeatable original recovery. |
 | Chandrabhan (`chandrabhan-kushwaha`) | Bounded SDK/sample integration and inventory presentation after contracts land | `packages/sdk`, `apps/sample-consumer`, diagnostics fixtures | Real acknowledged ingestion, host failure isolation, honest inventory. |
+| Soumya (`soumya240806`) | Evidence export, release rehearsal, optional impact visualization and metadata/fixture extensions | Evidence export, optional integration tests, demo docs | Traceable evidence, honest source labels, and combined rehearsal after ticket 35 passes. |
 
-The reconciled 41-ticket backlog assigns Ashutosh 11 tickets and Saransh, Anushka,
-and Chandrabhan 10 each; live issue ownership remains authoritative. Ticket counts
+The reconciled 41-ticket backlog assigns Ashutosh 9 tickets and Saransh, Anushka,
+Chandrabhan and Soumya 8 each; live issue ownership remains authoritative. Ticket counts
 are balanced, not equal-effort estimates. Preserve shared-file coordination and never
 implement an unassigned prerequisite under another ticket. The ticket index defines
 blocking edges and the combined release gate rather than numeric ordering.
