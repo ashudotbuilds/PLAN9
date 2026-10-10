@@ -109,3 +109,30 @@ Never include credentials or rewrite another contributor's history.
 - **Limitations:** Assignment/planning only; no application/runtime tests executed.
 - **Log commit identifier:** docs: log five-contributor ticket redistribution.
   Its publication is pending at entry creation; final response reports the result.
+
+## 2026-10-11 — [P0] 01: Start a healthy demo across three applications
+
+- **Task:** Issue #1: Start a healthy demo across three applications (https://github.com/ashudotbuilds/PLAN9/issues/1).
+- **Authenticated identity:** ashudotbuilds, verified via local git author and GitHub repository ownership.
+- **Status:** PUSHED to origin/codex/issue-01-healthy-demo-startup.
+- **Scope:** Delivered acceptance criteria for Ticket 01 across apps/api, apps/mock-providers, apps/web, and packages/contracts.
+- **Implementation:**
+  - Initialized monorepo configuration with pnpm workspace, tsconfig.base.json, and vitest.workspace.ts.
+  - Implemented `@driftguard/contracts` with strict Zod DTOs for error envelope, correlation header, health responses, mock entities (Users across three stable identities, Inventory, Shipping), lifecycle enums, and SDK observation batch V1.
+  - Implemented `apps/mock-providers` Fastify server on 127.0.0.1:4001 with M06 health, M01 Users API (`u-123`, `u-456`, `u-789`), M02 Inventory items, M03 Shipping estimate with calendar-day baseline calculation, and scenario control routes.
+  - Implemented `apps/api` Control Plane Fastify server on 127.0.0.1:4000 with A01 minimal public health, correlation ID propagation, strict error handler, and fail-closed handling for pre-bootstrap demo state (A02/A14).
+  - Implemented `apps/web` React/Vite/Tailwind operational canvas showing real service readiness for Control Plane API and Mock Dependency Providers (loading, offline, and ready states) with high-contrast surfaces and anti-slop design.
+  - Added `scripts/dev-runner.ts`, `scripts/wait-for-services.ts`, and `scripts/demo-smoke.ts`.
+- **Files changed:** `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.workspace.ts`, `packages/contracts/*`, `apps/api/*`, `apps/mock-providers/*`, `apps/web/*`, `scripts/demo-smoke.ts`, `scripts/dev-runner.ts`, `scripts/wait-for-services.ts`, `scripts/validate-planning.mjs`, and `.scratch/driftguard/issues/01-healthy-demo-startup.md`.
+- **Dependencies:** None. Ticket 01 is the initial frontier.
+- **Verification:**
+  - `pnpm -r run build`: 4 of 4 workspace projects compiled successfully.
+  - `pnpm -r run typecheck`: 0 TypeScript errors across all workspace packages.
+  - `vitest run`: 19 of 19 tests passed across 4 test suites (contracts, api, mock-providers, web).
+  - `scripts/demo-smoke.ts`: live HTTP verification of API health, mock provider health, all 3 user identities, inventory defaults, and calendar shipping estimate.
+  - `node scripts/validate-planning.mjs`: all 41 tickets, 97 requirements, 37 API routes, and 17 SDK gates validated.
+- **Branch:** `codex/issue-01-healthy-demo-startup`.
+- **Feature commit:** `5ba1f0ef8d0e073ec539a6bcb675af642989dd0b`.
+- **Confirmed push:** Confirmed push to `origin/codex/issue-01-healthy-demo-startup`.
+- **Log commit identifier:** `docs: record issue 01 completion in dev log`.
+- **Log publication:** Pending at entry creation; reported in final response.
