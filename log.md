@@ -734,3 +734,54 @@ Never include credentials or rewrite another contributor's history.
 - **Team Frontier Status:**
   - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30.
   - Next in line in topological order: **Ticket 31** (`AnushkaBhardwaj15`: "[P0] 31: Ingest SDK observation batches and deduplicate events").
+
+---
+
+## Entry: 2026-10-11 - Ticket 31: Ingest scoped SDK evidence through the existing detector (feat(#31))
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#31](https://github.com/ashudotbuilds/PLAN9/issues/31)
+- **Branch:** `main`
+- **Status:** COMPLETED, VERIFIED, AND INTEGRATED into main; Issue #31 verified. Feature commit `27c63c4` confirmed pushed to origin/main.
+- **Scope:** PRD FR-ING-01, FR-ING-02, FR-MON-01, FR-INV-02, FR-DET-03, NFR-20, NFR-22. AT-SDK-02, AT-SDK-03, AT-SDK-07, AT-SDK-09, AT-SDK-10, AT-SDK-15. Endpoints A28 (`POST /api/ingest/observations`) and A29 (`GET /api/sdk/diagnostics`).
+- **Implementation summary:**
+  1. **Strict Batch Validation & Ingestion Auth (A28, FR-ING-01, AT-SDK-02):**
+     - Auth: `requireIngestionAuth` enforces Bearer token validation and equality between key scope and request body scope (401/403).
+     - Strict `ObservationBatchV1` validation: schemaVersion '1', batchId UUID, events array bound <= 20, body size bound up to 128 KiB, method enum, route template <= 256 chars, duration 0-60000 ms.
+     - Timestamp window enforcement: Events must be within the past 24 hours and at most 5 minutes in the future (throws 400 `INVALID_EVENT_TIMESTAMP`).
+     - Session fencing: Rejects stale/mismatched session with 400 `STALE_SESSION`.
+     - Dependency verification: Verifies all dependency IDs in events exist in scope; returns 404 `DEPENDENCY_NOT_FOUND` if unknown.
+  2. **Idempotency, Dedup & Conflict Detection (A28, NFR-20):**
+     - Batch-level dedup: Same `batchId` with identical digest reuses original acknowledgment without incrementing counters, audit events, or incidents. Conflicting batch content with existing `batchId` throws 409 `BATCH_ID_CONFLICT`.
+     - Event-level dedup: Dedup namespace `projectId:environment:sessionId:eventId`. Duplicate events increment duplicate counter without side effects. Conflicting event content throws 409 `EVENT_ID_CONFLICT`.
+     - Retention bounds: Enforces 1,000 observations per session bound (throws 429 `RETENTION_LIMIT`).
+     - Rate limit: 60 ingestion requests/minute/scope enforced (throws 429 `RATE_LIMIT_EXCEEDED`).
+  3. **Evidence Sanity, Redaction & Findings Generation (A28, FR-DET-03, FR-MON-01):**
+     - Server-side redaction recursively strips secret/token keys (`authorization`, `token`, `secret`, `password`, `apiKey`) to `'[REDACTED]'`.
+     - Collection policy enforcement: Metadata-only events cannot claim field semantics. Reviewed fixtures mode on Users endpoint detects `field_removed`/`field_added` (e.g. `display_name` instead of `name`) and generates confirmed finding.
+     - Updates dependency `observationCount` and sets confidence to `observed`.
+  4. **SDK Diagnostics Endpoint (A29, FR-MON-01, AT-SDK-09):**
+     - `GET /api/sdk/diagnostics` returns scoped connection telemetry: `projectId`, `environment`, `sessionId`, `lastIngestAt`, `acceptedCount`, `rejectionCount`, `status`.
+     - Connection status dynamically maps: `awaiting_observations` (no ingests yet), `receiving` (active within last 60s), `stale` (no ingest for >60s).
+  5. **Contracts & API Client Integration:**
+     - Added contracts for `IngestObservationsResponseSchema` and `SdkDiagnosticsResponseSchema` in `@driftguard/contracts`.
+     - Extended `ApiClient` with `ingestObservations` and `getSdkDiagnostics`.
+  6. **Single-Commit Verification:**
+     - 94 vitest tests passing across workspace (`vitest run`).
+     - Workspace cleanly built (`pnpm -r run build`).
+     - Workspace typecheck passed with 0 errors (`pnpm -r run typecheck`).
+     - Planning verification script passed (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `packages/contracts/src/index.ts`
+  - `apps/api/src/services/inventory-service.ts`
+  - `apps/api/src/services/observation-ingestion-service.ts`
+  - `apps/api/src/app.ts`
+  - `apps/web/src/api-client.ts`
+  - `apps/api/tests/api.test.ts`
+  - `.scratch/driftguard/issues/31-sdk-observation-ingestion.md`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31.
+  - Next in line in topological order: **Ticket 11** (`soumya240806`: "[P0] 11: Reset to a fresh session and preserve completed evidence") and **Ticket 32** (`chandrabhan-kushwaha`: "[P0] 32: Connect the Node SDK and sample through real metadata ingestion").
+
