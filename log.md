@@ -785,3 +785,50 @@ Never include credentials or rewrite another contributor's history.
   - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31.
   - Next in line in topological order: **Ticket 11** (`soumya240806`: "[P0] 11: Reset to a fresh session and preserve completed evidence") and **Ticket 32** (`chandrabhan-kushwaha`: "[P0] 32: Connect the Node SDK and sample through real metadata ingestion").
 
+---
+
+## Entry: 2026-10-11 - Ticket 11: Reset to a fresh session and preserve completed evidence
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#11](https://github.com/ashudotbuilds/PLAN9/issues/11)
+- **Code Commit:** `67ded43`
+- **Status:** COMPLETED, VERIFIED, AND INTEGRATED into main; Issue #11 closed.
+- **Scope:** PRD FR-SIM-04, NFR-03, NFR-14, NFR-16, FR-ING-02, FR-LIN-01, NFR-20, NFR-22. Sections 13.2, 16, 21.1 (AT-SDK-15).
+- **Implementation summary:**
+  1. **Demo Session Reset Endpoint (A04 & M05):**
+     - Endpoint `POST /api/demo/reset` protected by operator authentication.
+     - Calls mock providers simulator reset `POST /__control/reset` to restore fixture defaults.
+     - Clears active baseline, active incidents, active scenarios, and active runtime adapter patches for the project environment scope.
+     - Releases the shared baseline lease cleanly.
+     - Issues a fresh session UUID (`sess_...`) transitioning state to `awaiting_baseline` with `activeAdapterVersion: 1`.
+     - Preserves immutable historical audit events, project identities, and declared dependency inventory.
+  2. **Scoped Concurrency & Lease Isolation:**
+     - Enforces non-owner refusal: Returns 409 `DEMO_SCOPE_BUSY` when attempting to reset an environment actively leased to another project scope.
+     - Rejects reset attempts during an active recovery run with 409 `DEMO_BUSY`.
+     - Enforces session fencing: old session IDs are invalidated, causing stale queued ingestion events to be rejected.
+  3. **UI Reset Action & API Client:**
+     - Added `resetDemo` method in `ApiClient` (`apps/web/src/api-client.ts`).
+     - Added a dedicated "Reset Demo Session" control and banner in `apps/web/src/App.tsx` that triggers A04 and updates the projection to `awaiting_baseline`.
+  4. **Single-Commit Verification:**
+     - 97 vitest tests passing across workspace (`pnpm test`).
+     - Monorepo cleanly built (`pnpm -r run build`).
+     - Typecheck passed with 0 errors across all 5 workspace projects (`pnpm -r run typecheck`).
+     - Planning verification script passed (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `packages/contracts/src/index.ts`
+  - `apps/mock-providers/src/app.ts`
+  - `apps/api/src/services/baseline-service.ts`
+  - `apps/api/src/services/incident-service.ts`
+  - `apps/api/src/services/project-service.ts`
+  - `apps/api/src/app.ts`
+  - `apps/web/src/api-client.ts`
+  - `apps/web/src/App.tsx`
+  - `apps/api/tests/api.test.ts`
+  - `.scratch/driftguard/issues/11-archive-reset-and-recapture.md`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11.
+  - Next in line in topological order: **Ticket 32** (`chandrabhan-kushwaha`: "[P0] 32: Connect the Node SDK and sample through real metadata ingestion").
+
+
