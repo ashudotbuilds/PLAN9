@@ -1,0 +1,590 @@
+# DRIFTGUARD PRD UPGRADE PROMPT
+## Integrate the Original SDK, API-Key, Dependency Discovery & Resilience Vision
+
+You are acting as a principal software architect, developer-tools product engineer, security engineer, and technical product manager.
+
+Your task is to **upgrade the existing `DRIFTGUARD_PRD.md` in place** so that it fully represents the original DriftGuard product vision while preserving the existing 24-hour hackathon MVP, architecture decisions, acceptance tests, recovery workflow, and safety guarantees.
+
+Do not blindly rewrite the document. First inspect the entire existing PRD, identify gaps between the current specification and the original product vision, then update the PRD systematically.
+
+The output must be a complete, internally consistent, implementation-ready specification that an autonomous coding agent can follow without inventing major architectural decisions.
+
+---
+
+## 1. Original Product Vision
+
+DriftGuard is a developer-first SaaS platform that helps applications discover, observe, monitor, understand, and safely adapt to changes in their external dependencies.
+
+The product has three actors:
+
+- **A — External providers:** APIs, third-party SDKs, hosted services, authentication and authorization providers, webhooks, and MCP servers.
+- **B — Customer applications:** Software products that consume those external services and want to understand and reduce dependency-related failures.
+- **C — DriftGuard:** Our SaaS control plane, developer SDK, dependency collector, monitoring engine, behavioral analysis system, impact analyzer, and constrained recovery engine.
+
+The original customer experience is:
+
+1. A developer creates a DriftGuard project.
+2. DriftGuard issues a project-specific ingestion API key.
+3. The developer installs the DriftGuard SDK in their application.
+4. The developer initializes the SDK using the project configuration and API key.
+5. DriftGuard starts collecting permitted, sanitized dependency metadata and runtime observations from supported integrations.
+6. The platform builds a versioned inventory of external dependencies and records their observed behavior.
+7. DriftGuard compares previous and current observations, provider specifications, and available version metadata.
+8. When a meaningful change is detected, DriftGuard identifies the potentially affected application workflows.
+9. The platform proposes a minimal compatibility adaptation where appropriate.
+10. The candidate repair is validated against deterministic tests before activation.
+11. DriftGuard activates a validated adaptation when policy permits, or requires review when evidence is insufficient.
+12. The platform retains evidence, version history, audit events, and rollback capability.
+
+The long-term goal is to become an **API Dependency Intelligence and Resilience Platform**, not merely an uptime monitor, API documentation viewer, secret scanner, or AI code-generation tool.
+
+## 2. Non-Negotiable Existing Requirements
+
+Preserve all valid architectural and product decisions already established in `DRIFTGUARD_PRD.md`.
+
+In particular:
+
+- Preserve the 24-hour hackathon build constraint.
+- Preserve the existing field-rename recovery scenario.
+- Preserve the unchanged-schema semantic-drift scenario.
+- Preserve behavioral twins, baseline snapshots, structural and behavioral drift detection, runtime field-read tracing, and workflow-level impact analysis.
+- Preserve the constrained adapter DSL and its existing P0 operation restrictions.
+- Preserve deterministic repair fallback when an LLM is unavailable.
+- Preserve shadow validation, exact patch-hash validation, versioned activation, post-activation replay, and automatic rollback.
+- Preserve the rule that AI proposes; deterministic policy and validation decide.
+- Preserve the rule that ambiguous semantic changes cannot be auto-repaired merely because a human clicks approve.
+- Preserve backend-owned recovery orchestration and backend-confirmed frontend state.
+- Preserve reset repeatability, auditability, secret redaction, and the existing acceptance tests.
+- Preserve the existing stack and package boundaries unless a documented incompatibility makes a change necessary.
+- Do not replace working architecture with an unrelated framework or generalized multi-agent system.
+
+The new SDK and discovery capabilities must complement the existing resilience engine rather than replace it.
+
+## 3. Add a First-Class Developer SDK
+
+Add a complete SDK specification to the PRD.
+
+For the hackathon, target a lightweight TypeScript SDK for Node.js applications.
+
+### 3.1 Developer experience
+
+Specify a simple integration that resembles:
+
+```typescript
+import { DriftGuard } from "@driftguard/sdk";
+
+const driftguard = new DriftGuard({
+  apiKey: process.env.DRIFTGUARD_API_KEY!,
+  endpoint: process.env.DRIFTGUARD_ENDPOINT,
+  environment: process.env.NODE_ENV ?? "development",
+});
+
+driftguard.registerDependency({
+  name: "users-api",
+  type: "rest-api",
+  baseUrl: "http://localhost:4001",
+});
+
+driftguard.trackRequest({
+  dependency: "users-api",
+  method: "GET",
+  path: "/users/:id",
+  statusCode: 200,
+  durationMs: 42,
+});
+
+await driftguard.flush();
+```
+
+This is illustrative API design, not a requirement to implement these exact signatures if a better, simpler interface fits the existing architecture.
+
+Specify initialization, project identification, environment identification, dependency registration, observation ingestion, flushing, shutdown, timeout handling, and error isolation.
+
+The SDK must not crash the host application if DriftGuard is unavailable. Telemetry must be bounded, asynchronous where appropriate, and safe for normal application execution.
+
+### 3.2 Minimum SDK features
+
+Define P0 requirements for:
+
+- Project registration through a dashboard-generated API key.
+- Explicit dependency registration.
+- Manual tracking of supported HTTP request observations.
+- Recording method, normalized route, status code, duration, observation timestamp, and dependency identifier.
+- Optional sanitized schema fingerprints or explicitly enabled response-shape observations.
+- Bounded batching and flushing.
+- Retry limits and timeouts.
+- Environment and SDK version metadata.
+- Health and integration diagnostics.
+- A local example application demonstrating real SDK-to-backend ingestion.
+
+The SDK must be a thin observation and integration layer. The existing backend observer, detector, impact analyzer, repair model, policy engine, validator, and recovery orchestrator remain authoritative.
+
+### 3.3 Automatic instrumentation is a separate capability
+
+Do not pretend that registering the SDK automatically discovers every third-party library or API in an application.
+
+Specify the difference between:
+
+- Explicit dependency registration.
+- Manual request tracking.
+- Supported HTTP client instrumentation.
+- Repository and dependency-manifest scanning.
+- Provider specification or changelog imports.
+- MCP server and tool discovery.
+- Runtime field-level dependency tracing.
+
+Automatic instrumentation of selected HTTP clients may be P1 if time permits. Universal SDK interception is not a P0 requirement.
+
+## 4. Add Project API Keys and Ingestion Authentication
+
+Define a secure project onboarding and ingestion-authentication model.
+
+### 4.1 Project lifecycle
+
+Specify:
+
+- Create project.
+- Generate project ingestion key.
+- Display the key only when initially issued.
+- Configure the SDK.
+- Validate connectivity.
+- View recent observations and registered dependencies.
+- Revoke and rotate keys.
+- Separate development and production environments.
+- Display last-seen timestamps and ingestion health.
+
+### 4.2 Authentication requirements
+
+Use an appropriately scoped project ingestion key for SDK-to-control-plane communication.
+
+Requirements:
+
+- Store only a cryptographic hash of issued keys where feasible; never persist plaintext keys.
+- Show plaintext credentials only at issuance.
+- Support revocation and rotation.
+- Validate credentials server-side.
+- Apply project-level authorization and request-size limits.
+- Prevent cross-project data access.
+- Redact credentials from logs, errors, audit payloads, and telemetry.
+- Never use the DriftGuard project key as a substitute for an external provider's API key.
+- Never require customers to upload all provider credentials simply to monitor their dependencies.
+
+For the 24-hour MVP, implement the smallest viable project-key lifecycle. If full multi-tenant authentication is not feasible, explicitly label the demo limitations and define the production requirements without falsely claiming production-grade isolation.
+
+## 5. Add a Dependency Discovery and Inventory System
+
+The platform must maintain a versioned dependency inventory for each project and environment.
+
+A dependency record should support fields such as:
+
+- Dependency ID and project ID.
+- Name and provider, when known.
+- Type: REST API, GraphQL API, SDK/package, authentication provider, webhook integration, MCP server, or other supported dependency.
+- Base URL or package identifier where appropriate.
+- Integration method and discovery source.
+- Environment.
+- First seen and last seen.
+- Observation count.
+- Health and confidence status.
+- Last observed contract fingerprint.
+- Current baseline and latest known version.
+- Associated endpoints, tools, or operations where known.
+- Related application workflows.
+- Collection and redaction policy.
+
+### Discovery sources
+
+Specify and distinguish these sources:
+
+1. **Runtime observations:** Dependencies explicitly registered or observed through supported HTTP clients.
+2. **Repository metadata:** Package manifests, lockfiles, API client declarations, and supported configuration files.
+3. **Provider contracts:** OpenAPI specifications, GraphQL schemas where accessible, and other supported machine-readable contracts.
+4. **Provider change feeds:** Changelogs, version notifications, and webhooks where available.
+5. **MCP integrations:** Configured MCP servers, advertised tools, input schemas, and observed tool-call behavior where access is authorized.
+6. **Explicit user registration:** Dependencies added manually by the developer.
+
+Discovery must be evidence-based. A package found in a lockfile does not prove that it is active at runtime. An observed request does not prove that all possible endpoints have been discovered.
+
+Track the provenance and confidence of each discovery.
+
+For the hackathon, seed the three existing mock services and implement one real SDK registration/observation path. Keep broad repository scanning and generalized MCP discovery outside mandatory P0 scope.
+
+## 6. Add Change History, Polling, and Monitoring
+
+The platform should compare a dependency's previous known behavior with its latest observation.
+
+Define a unified change-monitoring model that can consume:
+
+- SDK runtime observations.
+- Scheduled polling of explicitly configured, safe endpoints.
+- Imported or updated API specifications.
+- Provider changelog events.
+- Provider webhooks where supported.
+- Package-version metadata.
+- MCP tool and schema snapshots where supported.
+
+Do not poll arbitrary URLs or endpoints without an explicit configuration and safe access policy.
+
+### Change types
+
+Support a classification model covering:
+
+- Added, removed, renamed, moved, or type-changed fields.
+- Nullability and field-presence changes.
+- Response and error-envelope changes.
+- Status-code and header changes.
+- Pagination and ordering changes.
+- Authentication or authorization configuration changes when observable.
+- Dependency package/version changes.
+- MCP tool additions, removals, and schema changes.
+- Availability, latency, and rate-limit changes.
+- Behavioral or semantic changes where a deterministic probe or workflow invariant provides evidence.
+
+Preserve the existing structural and semantic-drift detection logic.
+
+Each finding must contain the before/after evidence, source, timestamps, classification, evidence strength, affected dependencies and workflows, and a stable deduplication fingerprint.
+
+Distinguish **detected**, **suspected**, and **confirmed** changes. A single anomalous response must not automatically be labelled a provider-wide breaking change.
+
+## 7. Extend Dependency Lineage and Impact Analysis
+
+Extend the existing field-level impact model into a project dependency graph.
+
+The graph should support relationships such as:
+
+`External Provider → API Endpoint → SDK/Client → Canonical Adapter → Application Workflow`
+
+For MCP integrations:
+
+`MCP Server → Tool/Schema → Consumer Integration → Application Workflow`
+
+Record the evidence behind each relationship.
+
+Differentiate direct runtime evidence, declared dependencies, inferred links, and manually configured relationships.
+
+The dashboard should allow the user to:
+
+- View discovered dependencies.
+- Inspect their last known contract and change history.
+- See which workflows consume affected fields or operations.
+- Distinguish affected and unaffected workflows.
+- Navigate from a change finding to its evidence and downstream impact.
+- Understand when an impact relationship is inferred rather than proven.
+
+Reuse the existing runtime field-read tracing and impact analyzer. Do not replace those mechanisms with a graph that is merely decorative or manually populated.
+
+React Flow may be used for interactive exploration if it does not delay the primary recovery flow.
+
+## 8. Integrate the SDK with the Existing Behavioral Twin
+
+The SDK must feed the existing observer and behavioral-twin system through a well-defined ingestion contract.
+
+Define how observations become:
+
+1. Sanitized observation events.
+2. Normalized endpoint and dependency identifiers.
+3. Versioned behavior fingerprints.
+4. Baseline candidates or current observations.
+5. Structural and behavioral change findings.
+6. Incident evidence.
+7. Dependency graph updates.
+
+Specify deduplication, timestamp normalization, route-template normalization, schema fingerprinting, payload-size limits, and retention policy.
+
+A runtime observation must not silently overwrite the last-known-good baseline. Baseline updates should be explicit, versioned, and auditable.
+
+Separate provider contract changes from changes in the application's own usage patterns.
+
+## 9. Add a Safe Compatibility and Integration Boundary
+
+Preserve the current constrained adapter runtime and recovery process.
+
+The SDK must not independently execute AI-generated code or modify the application's source code.
+
+Specify how a provider response may be normalized at a controlled integration boundary before it reaches the existing consumer workflow.
+
+For P0, the mock consumer and adapter runtime are sufficient to demonstrate recovery. The SDK integration must report observations and associate them with the same dependency model, but it must not require production traffic interception.
+
+For future proxy or gateway modes, specify a separate opt-in architecture with explicit routing, security, latency, availability, data-residency, and rollback considerations.
+
+Any future adaptation must retain:
+
+- An immutable candidate patch.
+- Strict schema validation.
+- Allowed-operation validation.
+- Deterministic workflow checks.
+- A validation result tied to the exact patch hash.
+- Explicit activation policy.
+- Last-known-good version retention.
+- Post-activation verification and rollback.
+
+No API key, authentication change, authorization policy, or high-risk operation may be modified automatically based solely on an AI proposal.
+
+## 10. Add Authentication and Authorization Dependency Intelligence
+
+Authentication and authorization are part of the original product vision, but the PRD must distinguish what can actually be observed.
+
+Support an inventory of known integrations such as OAuth/OIDC providers, identity SDKs, token-validation libraries, and authentication-related API endpoints.
+
+Where permitted, record non-secret metadata such as:
+
+- Provider and integration type.
+- SDK/package version.
+- Configured issuer or public endpoint.
+- Public discovery-document or JWKS metadata version/fingerprint where safe and appropriate.
+- Expiry or rotation metadata only when explicitly available through a supported, authorized integration.
+- Authentication-related failures and status-code patterns.
+- Relevant dependency and workflow relationships.
+
+Never collect or transmit raw access tokens, refresh tokens, passwords, private keys, cookies, client secrets, or arbitrary environment-variable values.
+
+Do not claim that a generic SDK can enumerate all credentials, inspect every authorization decision, or determine whether a hidden credential is valid. Such capabilities require explicit integration and authorization.
+
+For P0, keep this as a minimal dependency category and telemetry-redaction requirement. Advanced identity-provider integrations belong in later phases.
+
+## 11. Add MCP Dependency Support
+
+MCP must be represented in the dependency model because the original vision includes MCP servers and tools.
+
+Specify future support for:
+
+- Registering an MCP server explicitly.
+- Recording transport and configured server identity without exposing private connection details.
+- Enumerating advertised tools and their schemas when authorized.
+- Capturing tool-schema fingerprints and observed tool-call metadata.
+- Detecting added, removed, or changed tools and input schemas.
+- Connecting tool changes to consuming application workflows.
+- Applying the same evidence, impact, policy, validation, and rollback principles.
+
+Do not attempt to support every MCP transport or deployment arrangement in the 24-hour build.
+
+A static fixture or explicitly registered mock MCP integration is optional P1 only after the primary recovery flow passes its acceptance tests.
+
+## 12. Extend the Dashboard into a Developer Control Plane
+
+Preserve the existing evidence-first operational workspace and visual requirements.
+
+Extend the information architecture to include:
+
+1. Project and environment selector.
+2. Project SDK setup instructions and key-management actions.
+3. Dependency inventory and integration status.
+4. Baseline and latest-observation history.
+5. Drift findings and before/after evidence.
+6. Dependency impact trace.
+7. Repair proposal and validation lab.
+8. Recovery progress and rollback status.
+9. Audit history and ingestion diagnostics.
+
+Avoid turning the dashboard into a large collection of unrelated cards.
+
+The primary demo should remain centred on the existing field-rename recovery scenario. Developer onboarding and dependency inventory must make the broader SaaS vision understandable without making the main workflow harder to complete.
+
+Every displayed status, metric, dependency, and recovery stage must come from actual backend state or be explicitly labelled as seeded demonstration data.
+
+## 13. Add or Update API Contracts
+
+Extend the existing API specification with only the endpoints required by the agreed implementation.
+
+Consider contracts for:
+
+- Project creation and configuration.
+- API-key issuance, rotation, and revocation.
+- SDK ingestion.
+- Dependency registration and inventory.
+- Dependency detail and history.
+- Baseline listing and capture.
+- Observation ingestion and processing.
+- Change findings and incidents.
+- Provider specification or contract import.
+- Configured polling jobs.
+- Recovery execution and status.
+- Audit history and SDK diagnostics.
+
+Reuse existing endpoints whenever their purpose already matches. Do not create duplicate APIs for the same domain action.
+
+For each new endpoint, define request and response schemas, authentication, authorization, validation, error responses, idempotency expectations, size limits, and audit requirements.
+
+Use the existing correlation-ID and safe error-envelope conventions.
+
+## 14. Security, Privacy, and Operational Requirements
+
+Add explicit SDK and SaaS security requirements:
+
+- Redact sensitive headers and configured body fields locally before transmission.
+- Never send raw credentials or arbitrary environment-variable values.
+- Use TLS in production.
+- Bound queue size, payload size, timeouts, retries, and flush frequency.
+- Make network failure non-fatal to the customer's application.
+- Provide configurable sampling and collection policies.
+- Avoid logging full request/response bodies by default.
+- Avoid collecting personal data unless explicitly necessary, authorized, and configured.
+- Provide retention and deletion requirements for production.
+- Authenticate ingestion and isolate projects.
+- Rate-limit ingestion and prevent oversized or malformed payloads.
+- Validate all incoming schemas.
+- Do not trust provider metadata, imported specifications, repository files, or LLM output as executable instructions.
+- Ensure polling and probing cannot become an SSRF mechanism.
+- Do not perform unauthorized active probing or replay non-idempotent operations.
+- Keep model credentials and provider credentials out of the SDK and telemetry.
+- Make clear that development/demo security is not equivalent to production multi-tenant security.
+
+## 15. Preserve the 24-Hour Scope Through Prioritization
+
+Do not turn the new requirements into an impossible implementation mandate.
+
+Produce an explicit priority matrix with three levels.
+
+### P0 — Required for the hackathon
+
+- Existing DriftGuard recovery engine and both current scenarios.
+- Minimal project creation/configuration and project-specific ingestion key.
+- Minimal TypeScript SDK package.
+- One sample consumer application using the SDK.
+- Explicit registration of at least one dependency.
+- Successful SDK-to-control-plane observation ingestion.
+- Redaction and bounded telemetry.
+- Dependency inventory populated from actual registration/observations.
+- A versioned baseline and current observation.
+- Change detection using the existing detector.
+- Connection from observed dependency to existing impact analysis.
+- A functional developer dashboard showing integration and dependency status.
+- End-to-end regression tests for the original recovery flow.
+- Documentation and a repeatable demo.
+
+### P1 — Only after P0 is stable
+
+- Supported HTTP client auto-instrumentation.
+- Configurable scheduled polling for safe, explicitly registered endpoints.
+- OpenAPI import and comparison.
+- Provider package-version metadata.
+- Dependency history and evidence export.
+- Basic MCP fixture or mock integration.
+- Authentication-provider metadata integration.
+- Additional SDK integration examples.
+
+### P2 — Future production roadmap
+
+- Broader repository and lockfile scanning.
+- Multiple language SDKs.
+- Production-ready tenant isolation and organization/team management.
+- Generalized provider and MCP integrations.
+- Provider webhooks and richer changelog ingestion.
+- Advanced authentication/authorization integrations.
+- Opt-in proxy or gateway mode.
+- More advanced adaptive compatibility policies.
+- CI/CD, pull-request, staged rollout, and approval integrations.
+- Enterprise governance, retention, compliance, and audit features.
+
+If implementation time is insufficient, preserve the primary recovery acceptance test over optional discovery integrations.
+
+## 16. Update the Architecture and Repository Plan
+
+Inspect the existing monorepo and package structure before adding files.
+
+Integrate the SDK and ingestion API into the existing architecture rather than creating unnecessary independent microservices.
+
+The updated specification should explain:
+
+- Which package owns SDK types and public APIs.
+- Which service authenticates and validates ingestion.
+- Which package sanitizes and normalizes observations.
+- How dependency registration relates to provider and endpoint entities.
+- How observations feed the behavioral twin.
+- How change findings link to the impact analyzer.
+- How project keys are issued, stored, rotated, and revoked.
+- How SDK failures are isolated from the customer application.
+- How tests exercise the entire path.
+
+Add only the required SDK package, sample application, contracts, tests, and documentation. Do not copy the entire PRD into additional files or reorganize unrelated working packages.
+
+## 17. Required New Acceptance Tests
+
+Add concrete acceptance tests for:
+
+1. A project can be created and receive an ingestion key.
+2. A valid key can submit an observation to the correct project.
+3. An invalid, revoked, or wrong-project key cannot ingest data.
+4. The SDK can register a dependency and submit a valid observation.
+5. Authorization headers, cookies, and configured sensitive fields are redacted before persistence.
+6. An unavailable DriftGuard server does not crash the customer application.
+7. Repeated observations do not create duplicate dependency records or duplicate active incidents.
+8. The dependency inventory reflects backend-confirmed registration and observations.
+9. Baseline and latest fingerprints remain independently available.
+10. A changed observation can create a finding through the existing detector.
+11. An observed dependency can connect to the existing impact analyzer when sufficient lineage evidence exists.
+12. The original field-rename scenario still completes validation, activation, replay, and recovery.
+13. The semantic-drift scenario still refuses unsafe automatic repair.
+14. An invalid or modified patch cannot bypass validation.
+15. Rollback and demo reset continue to work.
+16. The demo runs without requiring a live LLM.
+17. No test requires real provider credentials or production traffic.
+
+Label any acceptance criterion that cannot realistically be completed within 24 hours as P1 or P2.
+
+## 18. Update the 24-Hour Execution Plan
+
+Revise the implementation schedule to include the SDK and project-key integration without sacrificing the primary recovery demonstration.
+
+Prefer this order:
+
+1. Inspect the current repository and establish a clean baseline.
+2. Preserve and verify the existing primary recovery scenario.
+3. Define the minimum project, dependency, and observation contracts.
+4. Implement the minimal ingestion authentication and API.
+5. Implement the lightweight SDK and sample consumer.
+6. Connect ingestion to the existing observation and dependency inventory systems.
+7. Connect the resulting findings to the existing impact and recovery engine.
+8. Integrate the onboarding and inventory UI.
+9. Run security, recovery, reset, and regression tests.
+10. Rehearse the complete demonstration and document limitations.
+
+Adjust the schedule according to actual implementation dependencies. State a clear cutoff after which optional features are dropped to protect the primary demo.
+
+## 19. Required Output from This PRD Upgrade
+
+Update `DRIFTGUARD_PRD.md` itself.
+
+The revised document must include:
+
+- Updated executive summary and product vision.
+- Clear distinction between the long-term SaaS and 24-hour MVP.
+- Updated actors and customer journey.
+- Developer SDK specification.
+- Project API-key and ingestion-authentication model.
+- Dependency inventory and discovery-source model.
+- Observation, baseline, polling, and change-history model.
+- Dependency graph and lineage model.
+- Authentication/authorization and MCP scope.
+- SDK-to-control-plane architecture.
+- Updated API contracts and domain entities.
+- Security, privacy, and operational requirements.
+- P0/P1/P2 scope and acceptance criteria.
+- Updated repository structure where necessary.
+- Revised 24-hour execution plan.
+- Updated demo script and test plan.
+- Explicit non-goals, assumptions, and known limitations.
+
+Resolve contradictions between old and new requirements rather than appending disconnected sections. Update references, endpoint names, domain models, test requirements, and architecture diagrams together.
+
+## 20. Execution Rules
+
+Before modifying the document:
+
+1. Read the complete existing PRD.
+2. Identify its existing decisions and acceptance criteria.
+3. Build a gap analysis against the original product vision described above.
+4. Identify contradictions and implementation risks.
+5. Define the smallest coherent P0 scope.
+
+Then update the PRD.
+
+Do not implement the entire product merely because this prompt discusses it. This task is to upgrade the specification.
+
+Do not remove existing requirements unless they are demonstrably contradictory or technically infeasible; document and justify any change.
+
+Do not invent completed features, measured performance, or test results.
+
+Do not claim universal dependency discovery, universal SDK interception, or production-grade multi-tenancy unless the specification and implementation genuinely support those claims.
+
+**Final quality gate:** The upgraded PRD must describe one coherent product: developers connect applications through a DriftGuard SDK and project key; DriftGuard builds an evidence-backed dependency inventory; its existing behavioral analysis detects meaningful changes and traces affected workflows; and its constrained recovery engine validates any proposed adaptation before activation. The 24-hour MVP must demonstrate this direction through one small, real SDK ingestion path and the existing deterministic recovery workflow.
