@@ -348,3 +348,26 @@ Never include credentials or rewrite another contributor's history.
   - Ticket 29 (`saransh-sh`: "Issue rotate and revoke environment-scoped ingestion keys") is also UNBLOCKED.
 - **Log commit identifier:** `docs: record issue 05 main integration and closure in dev log`.
 - **Log publication:** Confirmed pushed at `main`.
+
+## 2026-10-11 — Ticket 06: Validate candidate semantics and automatic eligibility
+
+- **Task:** Issue #6 ([P0] 06: Validate candidate semantics and automatic eligibility).
+- **Authenticated identity:** ashudotbuilds
+- **Status:** COMPLETED. Feature pushed to `origin/codex/issue-06-shadow-validation-and-policy`.
+- **Scope & Governance:** PRD FR-REP-05, FR-REP-07, FR-REP-08, FR-VAL-01, FR-VAL-02, FR-VAL-03, FR-VAL-04, FR-VAL-05, FR-VAL-07, NFR-15, FR-LIN-01, NFR-20; sections 12.6, 13, 16, 21.1 (AT-SDK-14); endpoints `POST /api/patches/:patchId/validate` (A11) and `GET /api/incidents/:incidentId` (A08). Implemented shadow validation running candidate adapters in complete isolation without mutating active runtime behavior; replayed captured baseline fixtures across all 3 identities (`u-123`, `u-456`, `u-789`); evaluated all 9 conjunctive safety gates defined in FR-REP-07 (`read_only_endpoint`, `structural_drift_only`, `allowed_operations_only`, `value_equivalence_identities`, `no_proposal_uncertainty`, `replay_safe_workflows`, `canonical_schema_and_invariants`, `patch_hash_match`, `no_unrelated_regression`); enforced exact candidate patch hash verification; stubbed workflow side effects (`sideEffectStubbed: true`, preventing live external email dispatch during shadow execution per FR-VAL-07); persisted immutable `validationRun` outcomes and gate checks on the incident; and mounted interactive validation trigger and status visualizer in the web UI.
+- **Changes made:**
+  - `packages/contracts`: Added contracts for `ValidationGateIdSchema`, `ValidationGateResultSchema`, `ValidationWorkflowOutcomeSchema`, `ValidationEligibilitySchema`, `ValidationRunSchema`, `ValidatePatchRequestSchema`, `ValidatePatchResponseSchema`, and extended `IncidentDetailSchema` with `validationRuns`.
+  - `apps/api`: Implemented `IncidentService.validatePatch` and `getValidationRun` in `apps/api/src/services/incident-service.ts`; mounted endpoint `POST /api/patches/:patchId/validate` (A11) in `apps/api/src/app.ts`.
+  - `apps/web`: Added `apiClient.validatePatch` in `apps/web/src/api-client.ts`; added validation state hooks, `handleValidatePatch`, and Shadow Validation & Automatic Eligibility card (A11) in `apps/web/src/App.tsx`.
+  - `apps/api/tests/api.test.ts`: Added tests for validating candidate patches across all 9 gates, verifying `sideEffectStubbed`, testing candidate patch hash mismatch rejection (`FR-VAL-05`), and testing 404 for unknown patch ID.
+  - `apps/web/src/App.test.tsx`: Added UI test for triggering patch validation and verifying rendered gates and `ELIGIBLE FOR ACTIVATION` badge.
+  - `.scratch/driftguard/issues/06-shadow-validation-and-policy.md`: Completed acceptance criteria checklist and marked status as completed.
+- **Verification:**
+  - `pnpm -r run build`: All 4 packages compiled cleanly; Vite production bundle built successfully.
+  - `pnpm -r run typecheck`: 0 TypeScript errors across all 4 packages.
+  - `vitest run`: 51 of 51 tests passed across all 4 suites (`@driftguard/contracts`, `@driftguard/mock-providers`, `@driftguard/api`, `@driftguard/web`).
+  - `node scripts/validate-planning.mjs`: All 41 tickets, 97 requirements, 37 API routes, and 17 SDK gates validated successfully.
+- **Branch:** `codex/issue-06-shadow-validation-and-policy`.
+- **Feature commit:** `69011ee`.
+- **Confirmed push:** Confirmed push to `origin/codex/issue-06-shadow-validation-and-policy`.
+
