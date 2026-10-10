@@ -86,3 +86,26 @@ Never include credentials or rewrite another contributor's history.
 - **Log commit identifier:** docs: log SDK planning reconciliation push.
   Log publication is not yet confirmed at entry creation; its actual SHA and push
   outcome are reported after this separate log commit is published.
+
+## 2026-10-11 — Five-contributor ticket redistribution
+
+- **Task:** User requested inclusion of soumya240806 in the balanced assignments.
+- **Authenticated identity:** saransh-sh through GitHub CLI user API. Soumya's
+  repository assignment eligibility returned 204 before mutation.
+- **Status:** PUSHED to origin/main; all eight GitHub assignment changes verified.
+- **Scope:** Moved issues 13, 15, 18, 20, 23, 38, 39 and 41 to soumya240806.
+  Each prior owner supplied two tickets. Final counts: ashudotbuilds 9;
+  saransh-sh, AnushkaBhardwaj15, chandrabhan-kushwaha and soumya240806 8 each.
+  Core repair/security assignments remain with Ashutosh/Saransh. Equal counts
+  do not imply equal effort; optional and deferred scope remains gated.
+- **Files:** Eight local ticket owners, ticket index, README, PRD contributor
+  coordination, and validator's allowed-owner list. No application code changed.
+- **Verification:** 41 live issues each have one assignee; all eight issue patches
+  preserved scope, checkboxes, blockers, labels and state. Local validator passed
+  41 tickets/97 requirements/37 routes/17 SDK gates and five-person balance;
+  diff/staged checks passed. Dependencies and acceptance criteria unchanged.
+- **Confirmed push:** e485efd582a15aecc8a6a1fb5562d7ad26f69444 to origin/main;
+  remote SHA verified. No PR, force push, issue closure or collaborator invitation.
+- **Limitations:** Assignment/planning only; no application/runtime tests executed.
+- **Log commit identifier:** docs: log five-contributor ticket redistribution.
+  Its publication is pending at entry creation; final response reports the result.
