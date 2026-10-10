@@ -999,6 +999,211 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(res.json().error.code).toBe('UNSUPPORTED_DRIFT');
     });
   });
+
+  describe('A11 & A08: Shadow Validation & Automatic Eligibility', () => {
+    it('validates candidate patch in shadow isolation and passes all 9 FR-REP-07 gates', async () => {
+      let isRenamed = false;
+      const mockFetch = vi.fn(async (url: any) => {
+        const u = String(url);
+        if (u.includes('/users/u-123')) {
+          return { ok: true, json: async () => isRenamed ? { id: 'u-123', display_name: 'Aarav' } : { id: 'u-123', name: 'Aarav' } };
+        }
+        if (u.includes('/users/u-456')) {
+          return { ok: true, json: async () => isRenamed ? { id: 'u-456', display_name: 'Meera' } : { id: 'u-456', name: 'Meera' } };
+        }
+        if (u.includes('/users/u-789')) {
+          return { ok: true, json: async () => isRenamed ? { id: 'u-789', display_name: 'Kabir' } : { id: 'u-789', name: 'Kabir' } };
+        }
+        if (u.includes('/inventory/items')) {
+          return { ok: true, json: async () => ({ items: [{ id: '1', sku: 'A', quantity: 10, in_stock: true }], total: 1 }) };
+        }
+        if (u.includes('/shipping/estimate')) {
+          return { ok: true, json: async () => ({ estimated_delivery_date: '2026-10-18' }) };
+        }
+        if (u.includes('/scenarios/users.field-rename/inject')) {
+          isRenamed = true;
+          return { ok: true, json: async () => ({ ok: true, activeScenarios: ['users.field-rename'] }) };
+        }
+        return { ok: false, status: 404 };
+      });
+
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      // Setup baseline, inject scenario, run observation, propose repair
+      await baselineService.captureBaseline('prj_demo_default', 'development', 'sess_val');
+      await testApp.inject({
+        method: 'POST',
+        url: '/api/scenarios/users.field-rename/inject',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken, [IDEMPOTENCY_KEY_HEADER]: 'idem-inj-val' },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_val' }
+      });
+      const obsRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/observations/run',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken, [IDEMPOTENCY_KEY_HEADER]: 'idem-obs-val' },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_val' }
+      });
+      const incidentId = obsRes.json().incident.id;
+
+      const propRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/propose-repair`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+      const proposal = propRes.json().proposal;
+      const patchId = proposal.patch.id;
+      const patchHash = proposal.patch.hash;
+
+      // Validate candidate patch via A11
+      const valRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${patchId}/validate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', patchHash }
+      });
+
+      expect(valRes.statusCode).toBe(200);
+      const { validationRun, auditEventId } = valRes.json();
+      expect(validationRun.id).toMatch(/^val_/);
+      expect(validationRun.patchId).toBe(patchId);
+      expect(validationRun.patchHash).toBe(patchHash);
+      expect(validationRun.incidentId).toBe(incidentId);
+      expect(validationRun.status).toBe('passed');
+      expect(validationRun.eligibility).toBe('eligible');
+
+      // Verify all 9 gates
+      expect(validationRun.gates.length).toBe(9);
+      for (const gate of validationRun.gates) {
+        expect(gate.status).toBe('passed');
+      }
+      const gateIds = validationRun.gates.map((g: any) => g.gateId);
+      expect(gateIds).toContain('read_only_endpoint');
+      expect(gateIds).toContain('structural_drift_only');
+      expect(gateIds).toContain('allowed_operations_only');
+      expect(gateIds).toContain('value_equivalence_identities');
+      expect(gateIds).toContain('no_proposal_uncertainty');
+      expect(gateIds).toContain('replay_safe_workflows');
+      expect(gateIds).toContain('canonical_schema_and_invariants');
+      expect(gateIds).toContain('patch_hash_match');
+      expect(gateIds).toContain('no_unrelated_regression');
+
+      // Verify workflow outcomes and side effect stubbing (FR-VAL-07)
+      expect(validationRun.workflowOutcomes.length).toBe(4);
+      const welcomeOutcome = validationRun.workflowOutcomes.find((w: any) => w.workflowId === 'welcome_email');
+      expect(welcomeOutcome.status).toBe('passed');
+      expect(welcomeOutcome.sideEffectStubbed).toBe(true);
+
+      const profileOutcome = validationRun.workflowOutcomes.find((w: any) => w.workflowId === 'customer_profile');
+      expect(profileOutcome.status).toBe('passed');
+
+      const invOutcome = validationRun.workflowOutcomes.find((w: any) => w.workflowId === 'inventory_sync');
+      expect(invOutcome.status).toBe('unchanged');
+
+      // Verify incident detail (A08) retains validation run
+      const detailRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/incidents/${incidentId}?projectId=prj_demo_default&environment=development`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      expect(detailRes.statusCode).toBe(200);
+      const detail = detailRes.json();
+      expect(detail.incident.validationRuns).toBeDefined();
+      expect(detail.incident.validationRuns.length).toBe(1);
+      expect(detail.incident.validationRuns[0].id).toBe(validationRun.id);
+    });
+
+    it('rejects candidate patch when candidate patch hash does not match (FR-VAL-05)', async () => {
+      const mockFetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }));
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+
+      // Seed proposal
+      const fakePatch = {
+        id: 'patch_tamper_test',
+        hash: 'original_hash_123',
+        provider: 'users',
+        targetEntity: 'CanonicalUser',
+        version: 2,
+        rules: [{ op: 'coalesce' as const, sources: ['display_name', 'name'], targetField: 'displayName' }],
+        preservedFields: ['id'],
+        diff: 'fake diff'
+      };
+      (incidentService as any).incidents.set('inc_val_test', {
+        id: 'inc_val_test',
+        projectId: 'prj_demo_default',
+        environment: 'development',
+        sessionId: 'sess_1',
+        provider: 'users',
+        endpoint: '/api/v1/users',
+        fingerprint: 'fp_val',
+        status: 'open',
+        severity: 'high',
+        summary: 'Drift test',
+        detectedAt: new Date().toISOString(),
+        evidenceStrength: 'confirmed',
+        affectedWorkflows: ['welcome_email'],
+        findings: [{ id: 'f1', type: 'field_removed', provider: 'users', endpoint: '/users', fieldName: 'name', path: '$.name', evidenceStrength: 'confirmed', description: 'removed' }],
+        beforeEvidence: {},
+        afterEvidence: {},
+        failedWorkflows: [],
+        proposals: [{
+          id: 'prop_tamper',
+          incidentId: 'inc_val_test',
+          source: 'deterministic_fallback',
+          recommendation: 'recommended',
+          confidence: 0.95,
+          patch: fakePatch,
+          evidenceRefs: ['inc_val_test'],
+          uncertainties: [],
+          requiredChecks: ['test'],
+          createdAt: new Date().toISOString(),
+          auditEventId: 'aud_prop'
+        }],
+        auditEventId: 'aud_1'
+      });
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/patches/patch_tamper_test/validate',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', patchHash: 'tampered_candidate_hash' }
+      });
+
+      expect(res.statusCode).toBe(200);
+      const { validationRun } = res.json();
+      expect(validationRun.status).toBe('failed');
+      expect(validationRun.eligibility).toBe('rejected');
+      const hashGate = validationRun.gates.find((g: any) => g.gateId === 'patch_hash_match');
+      expect(hashGate.status).toBe('failed');
+    });
+
+    it('returns 404 PATCH_NOT_FOUND when validating non-existent patch', async () => {
+      const mockFetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }));
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/patches/patch_nonexistent/validate',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error.code).toBe('PATCH_NOT_FOUND');
+    });
+  });
 });
 
 

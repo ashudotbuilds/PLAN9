@@ -468,6 +468,22 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     return reply.status(200).send(result);
   });
 
+  // A11: Validate Candidate Patch in Shadow Mode
+  app.post('/api/patches/:patchId/validate', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const { patchId } = request.params as { patchId: string };
+    const query = request.query as { projectId?: string; environment?: string; patchHash?: string };
+    const body = (request.body as { projectId?: string; environment?: string; patchHash?: string } | undefined) || {};
+
+    const envCandidate = body.environment || query.environment;
+    const envParsed = envCandidate ? ProjectEnvironmentSchema.safeParse(envCandidate) : null;
+    const environment = envParsed && envParsed.success ? envParsed.data : 'development';
+    const projectId = body.projectId || query.projectId || 'prj_demo_default';
+    const candidatePatchHash = body.patchHash || query.patchHash;
+
+    const result = await incidentService.validatePatch(patchId, projectId, environment, candidatePatchHash);
+    return reply.status(200).send(result);
+  });
+
   return app;
 }
 

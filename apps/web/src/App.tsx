@@ -9,7 +9,8 @@ import {
   IncidentSummary,
   IncidentDetail,
   AnalyzeImpactResponse,
-  RepairProposal
+  RepairProposal,
+  ValidationRun
 } from '@driftguard/contracts';
 
 export function App() {
@@ -58,6 +59,11 @@ export function App() {
   const [proposingRepair, setProposingRepair] = useState(false);
   const [repairProposal, setRepairProposal] = useState<RepairProposal | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
+
+  // Ticket 06: Shadow Validation & Automatic Eligibility (A11)
+  const [validatingPatch, setValidatingPatch] = useState(false);
+  const [validationRun, setValidationRun] = useState<ValidationRun | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
 
   const fetchStatus = async () => {
@@ -242,6 +248,11 @@ export function App() {
       } else {
         setRepairProposal(null);
       }
+      if (detail.validationRuns && detail.validationRuns.length > 0) {
+        setValidationRun(detail.validationRuns[detail.validationRuns.length - 1]);
+      } else {
+        setValidationRun(null);
+      }
     } catch (err) {
       alert((err as Error).message);
     } finally {
@@ -287,6 +298,31 @@ export function App() {
       setProposalError((err as Error).message || 'Failed to propose repair.');
     } finally {
       setProposingRepair(false);
+    }
+  };
+
+  const handleValidatePatch = async (patchId: string, patchHash: string) => {
+    setValidatingPatch(true);
+    setValidationError(null);
+    try {
+      const res = await apiClient.validatePatch(
+        patchId,
+        selectedProjectId,
+        selectedEnvironment,
+        patchHash
+      );
+      setValidationRun(res.validationRun);
+      setSelectedIncident((prev) => {
+        if (!prev) return null;
+        const validationRuns = prev.validationRuns
+          ? [...prev.validationRuns, res.validationRun]
+          : [res.validationRun];
+        return { ...prev, validationRuns };
+      });
+    } catch (err) {
+      setValidationError((err as Error).message || 'Failed to validate candidate patch.');
+    } finally {
+      setValidatingPatch(false);
     }
   };
 
@@ -1008,6 +1044,148 @@ export function App() {
                             {(repairProposal || selectedIncident.proposals?.[0])?.requiredChecks.map((c, i) => (
                               <div key={i} className="text-[#e3b341]">
                                 ✓ {c}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Ticket 06: Shadow Validation & Automatic Eligibility (A11) */}
+                  <div className="pt-3 border-t border-[#21262d] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h5 className="text-xs font-semibold text-[#f0f6fc]">
+                          Shadow Validation & Automatic Eligibility (A11)
+                        </h5>
+                        <p className="text-[11px] text-[#8b949e]">
+                          FR-REP-07 & FR-VAL-01..05: 9 conjunctive safety gates in isolated counterfactual twin
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const prop = repairProposal || selectedIncident.proposals?.[0];
+                          if (prop) {
+                            handleValidatePatch(prop.patch.id, prop.patch.hash);
+                          }
+                        }}
+                        disabled={!(repairProposal || (selectedIncident.proposals && selectedIncident.proposals.length > 0)) || validatingPatch}
+                        className="px-3 py-1 bg-[#1f6feb] hover:bg-[#388bfd] disabled:opacity-50 text-white rounded text-xs font-medium transition cursor-pointer"
+                      >
+                        {validatingPatch ? 'Validating Patch...' : 'Validate Candidate Adapter (A11)'}
+                      </button>
+                    </div>
+
+                    {validationError && (
+                      <div className="p-2 bg-[#da3633]/10 border border-[#da3633]/30 rounded text-[#f85149] font-mono text-xs">
+                        {validationError}
+                      </div>
+                    )}
+
+                    {(validationRun || (selectedIncident.validationRuns && selectedIncident.validationRuns[0])) && (
+                      <div className="p-3 bg-[#161b22] border border-[#1f6feb]/40 rounded space-y-3 font-mono text-xs">
+                        {/* Status Badges Header */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#21262d] pb-2">
+                          <div className="flex items-center space-x-2">
+                            {(() => {
+                              const run = validationRun || selectedIncident.validationRuns?.[0];
+                              const elig = run?.eligibility;
+                              if (elig === 'eligible') {
+                                return (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40">
+                                    ELIGIBLE FOR ACTIVATION
+                                  </span>
+                                );
+                              }
+                              if (elig === 'review_required') {
+                                return (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#d29922]/20 text-[#e3b341] border border-[#d29922]/40">
+                                    REVIEW REQUIRED
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#da3633]/20 text-[#f85149] border border-[#da3633]/40">
+                                  REJECTED
+                                </span>
+                              );
+                            })()}
+                            <span className="text-[#f0f6fc] font-semibold text-[11px]">
+                              {`Status: ${(validationRun || selectedIncident.validationRuns?.[0])?.status.toUpperCase()}`}
+                            </span>
+                            <span className="text-[#8b949e] text-[10px]">
+                              {`Patch Hash: ${(validationRun || selectedIncident.validationRuns?.[0])?.patchHash.slice(0, 16)}...`}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-[#8b949e]">
+                            {`Run ID: ${(validationRun || selectedIncident.validationRuns?.[0])?.id}`}
+                          </span>
+                        </div>
+
+                        {/* 9 Conjunctive Safety Gates */}
+                        <div className="space-y-1">
+                          <span className="text-[#8b949e] text-[10px] font-bold block">
+                            FR-REP-07 CONJUNCTIVE SAFETY GATES:
+                          </span>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            {(validationRun || selectedIncident.validationRuns?.[0])?.gates.map((g) => (
+                              <div
+                                key={g.gateId}
+                                className={`p-2 bg-[#0d1117] border rounded space-y-1 ${
+                                  g.status === 'passed' ? 'border-[#238636]/30' : 'border-[#da3633]/40'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="text-[#f0f6fc] font-semibold truncate" title={g.gateId}>
+                                    {g.gateId}
+                                  </span>
+                                  <span
+                                    className={`px-1 rounded text-[9px] font-bold ${
+                                      g.status === 'passed' ? 'bg-[#238636]/20 text-[#3fb950]' : 'bg-[#da3633]/20 text-[#f85149]'
+                                    }`}
+                                  >
+                                    {g.status.toUpperCase()}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-[#8b949e] line-clamp-2" title={g.details}>
+                                  {g.details}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Workflow Replay Outcomes with Side Effect Isolation */}
+                        <div className="pt-2 border-t border-[#21262d] space-y-1">
+                          <span className="text-[#8b949e] text-[10px] font-bold block">
+                            SHADOW WORKFLOW OUTCOMES & SIDE-EFFECT ISOLATION (FR-VAL-07):
+                          </span>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+                            {(validationRun || selectedIncident.validationRuns?.[0])?.workflowOutcomes.map((wf) => (
+                              <div key={wf.workflowId} className="p-2 bg-[#0d1117] border border-[#21262d] rounded flex items-center justify-between">
+                                <div>
+                                  <span className="text-[#79c0ff] font-semibold">{wf.workflowId}</span>
+                                  <span className="text-[#8b949e] text-[10px] block">{wf.details}</span>
+                                </div>
+                                <div className="text-right space-y-0.5">
+                                  <span
+                                    className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                      wf.status === 'passed'
+                                        ? 'bg-[#238636]/20 text-[#3fb950]'
+                                        : wf.status === 'unchanged'
+                                        ? 'bg-[#58a6ff]/20 text-[#58a6ff]'
+                                        : 'bg-[#da3633]/20 text-[#f85149]'
+                                    }`}
+                                  >
+                                    {wf.status.toUpperCase()}
+                                  </span>
+                                  {wf.sideEffectStubbed && (
+                                    <span className="block text-[9px] text-[#e3b341]">
+                                      stubbed (0 live transmission)
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             ))}
                           </div>

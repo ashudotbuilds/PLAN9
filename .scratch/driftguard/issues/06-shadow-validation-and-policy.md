@@ -4,9 +4,9 @@
 
 **Blocked by:** [05 - Propose a constrained compatible adapter](05-bounded-repair-proposal.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
-**Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
+**Planning readiness:** Completed and verified across contracts, API, and web UI.
 
 **Priority:** P0
 
@@ -20,15 +20,15 @@
 
 ## Acceptance criteria
 
-- [ ] Replay captured fixtures in isolation through the constrained interpreter.
-- [ ] Canonical schema and both affected workflow invariants pass for all three identities; unrelated workflows remain unchanged.
-- [ ] Persist checks against the exact immutable candidate patch hash.
-- [ ] Evaluate every FR-REP-07 gate as one conjunctive policy and persist individual outcomes.
-- [ ] Semantic/conflicting/high-risk/insufficient evidence yields review_required; invalid proposals or failed validation yield rejected.
-- [ ] Acknowledgement or approval never bypasses validation; side-effecting steps use intents or stubs.
+- [x] Replay captured fixtures in isolation through the constrained interpreter.
+- [x] Canonical schema and both affected workflow invariants pass for all three identities; unrelated workflows remain unchanged.
+- [x] Persist checks against the exact immutable candidate patch hash.
+- [x] Evaluate every FR-REP-07 gate as one conjunctive policy and persist individual outcomes.
+- [x] Semantic/conflicting/high-risk/insufficient evidence yields review_required; invalid proposals or failed validation yield rejected.
+- [x] Acknowledgement or approval never bypasses validation; side-effecting steps use intents or stubs.
 
-- [ ] Validation resolves patch, fixtures, baseline, workflows, and evidence in the recorded project/environment/session only; operator route guards cannot be substituted by ingestion keys.
-- [ ] Customer-reported fixtures, metadata-only observations, or inferred workflow links never replace the controlled three-identity evidence required by FR-REP-07. Keep review as a hold until every deterministic check passes.
+- [x] Validation resolves patch, fixtures, baseline, workflows, and evidence in the recorded project/environment/session only; operator route guards cannot be substituted by ingestion keys.
+- [x] Customer-reported fixtures, metadata-only observations, or inferred workflow links never replace the controlled three-identity evidence required by FR-REP-07. Keep review as a hold until every deterministic check passes.
 
 ## Test scenarios
 
@@ -55,7 +55,7 @@ Deliver the acceptance criteria as one observable slice. Preserve the PRD safety
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.

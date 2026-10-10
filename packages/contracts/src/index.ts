@@ -538,9 +538,73 @@ export const IncidentDetailSchema = z.object({
   ),
   impactAnalysis: AnalyzeImpactResponseSchema.optional(),
   proposals: z.array(RepairProposalSchema).optional(),
+  validationRuns: z.array(z.lazy(() => ValidationRunSchema)).optional(),
   auditEventId: z.string()
 });
 export type IncidentDetail = z.infer<typeof IncidentDetailSchema>;
+
+// Ticket 06: Shadow Validation & Automatic Eligibility (A11)
+export const ValidationGateIdSchema = z.enum([
+  'read_only_endpoint',
+  'structural_drift_only',
+  'allowed_operations_only',
+  'value_equivalence_identities',
+  'no_proposal_uncertainty',
+  'replay_safe_workflows',
+  'canonical_schema_and_invariants',
+  'patch_hash_match',
+  'no_unrelated_regression'
+]);
+export type ValidationGateId = z.infer<typeof ValidationGateIdSchema>;
+
+export const ValidationGateResultSchema = z.object({
+  gateId: ValidationGateIdSchema,
+  status: z.enum(['passed', 'failed']),
+  details: z.string()
+});
+export type ValidationGateResult = z.infer<typeof ValidationGateResultSchema>;
+
+export const ValidationWorkflowOutcomeSchema = z.object({
+  workflowId: WorkflowIdSchema,
+  status: z.enum(['passed', 'failed', 'unchanged']),
+  details: z.string(),
+  sideEffectStubbed: z.boolean()
+});
+export type ValidationWorkflowOutcome = z.infer<typeof ValidationWorkflowOutcomeSchema>;
+
+export const ValidationEligibilitySchema = z.enum([
+  'eligible',
+  'review_required',
+  'rejected'
+]);
+export type ValidationEligibility = z.infer<typeof ValidationEligibilitySchema>;
+
+export const ValidationRunSchema = z.object({
+  id: z.string(),
+  patchId: z.string(),
+  patchHash: z.string(),
+  incidentId: z.string(),
+  status: z.enum(['passed', 'failed']),
+  eligibility: ValidationEligibilitySchema,
+  gates: z.array(ValidationGateResultSchema),
+  workflowOutcomes: z.array(ValidationWorkflowOutcomeSchema),
+  evaluatedAt: z.string().datetime(),
+  auditEventId: z.string()
+});
+export type ValidationRun = z.infer<typeof ValidationRunSchema>;
+
+export const ValidatePatchRequestSchema = z.object({
+  projectId: z.string().min(1),
+  environment: ProjectEnvironmentSchema,
+  patchHash: z.string().optional()
+});
+export type ValidatePatchRequest = z.infer<typeof ValidatePatchRequestSchema>;
+
+export const ValidatePatchResponseSchema = z.object({
+  validationRun: ValidationRunSchema,
+  auditEventId: z.string()
+});
+export type ValidatePatchResponse = z.infer<typeof ValidatePatchResponseSchema>;
 
 export const IncidentDetailResponseSchema = z.object({
   incident: IncidentDetailSchema

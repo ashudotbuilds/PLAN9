@@ -29,7 +29,9 @@ import {
   AnalyzeImpactResponse,
   AnalyzeImpactResponseSchema,
   ProposeRepairResponse,
-  ProposeRepairResponseSchema
+  ProposeRepairResponseSchema,
+  ValidatePatchResponse,
+  ValidatePatchResponseSchema
 } from '@driftguard/contracts';
 
 
@@ -347,6 +349,31 @@ export class ApiClient {
 
     const data = await res.json();
     return ProposeRepairResponseSchema.parse(data);
+  }
+
+  // Shadow Validation & Automatic Eligibility (A11)
+  async validatePatch(
+    patchId: string,
+    projectId: string,
+    environment: ProjectEnvironment,
+    patchHash?: string
+  ): Promise<ValidatePatchResponse> {
+    const res = await fetch(`${this.apiBase}/patches/${patchId}/validate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ projectId, environment, patchHash })
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error?.message || `Failed to validate patch: ${res.status}`);
+    }
+
+    const data = await res.json();
+    return ValidatePatchResponseSchema.parse(data);
   }
 }
 
