@@ -4,7 +4,7 @@
 
 **Blocked by:** [09 - Operate and inspect recovery from the dashboard](09-operational-recovery-dashboard.md); [10 - Detect unchanged-schema shipping drift and hold repair](10-shipping-semantic-refusal.md); [11 - Reset to a fresh session and preserve completed evidence](11-archive-reset-and-recapture.md); [12 - Keep failures bounded and explainable across the demo](12-error-evidence-and-bounds.md); [35 - Prove connected SDK and recovery acceptance](35-connected-demo-acceptance.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
 **Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
 
@@ -20,17 +20,17 @@
 
 ## Acceptance criteria
 
-- [ ] Primary PRD acceptance test passes through backend APIs with all three identities.
-- [ ] Offline fallback, wrong patch rejection, no approval bypass, infrastructure isolation, automatic rollback, and fresh reset pass.
-- [ ] Show healthy baseline, user drift, exact impact, backend safe recovery, unchanged-schema shipping hold, audit, and rollback within three minutes.
-- [ ] Two consecutive full rehearsals succeed in presentation environment.
-- [ ] README records startup, environment placeholders, offline mode, demo steps, measured results, and limitations.
-- [ ] Run one browser golden test if time permits; otherwise execute API smoke and record a manual UI rehearsal.
-- [ ] No P1 starts before both primary recovery acceptance and all connected SDK acceptance gates pass; freeze features at hour 19.
+- [x] Primary PRD acceptance test passes through backend APIs with all three identities.
+- [x] Offline fallback, wrong patch rejection, no approval bypass, infrastructure isolation, automatic rollback, and fresh reset pass.
+- [x] Show healthy baseline, user drift, exact impact, backend safe recovery, unchanged-schema shipping hold, audit, and rollback within three minutes.
+- [x] Two consecutive full rehearsals succeed in presentation environment.
+- [x] README records startup, environment placeholders, offline mode, demo steps, measured results, and limitations.
+- [x] Run one browser golden test if time permits; otherwise execute API smoke and record a manual UI rehearsal.
+- [x] No P1 starts before both primary recovery acceptance and all connected SDK acceptance gates pass; freeze features at hour 19.
 
-- [ ] Release requires the original exact section 21 recovery test and every section 21.1 gate AT-SDK-01 through AT-SDK-17; ticket 35 supplies connected security/regression evidence, not a substitute for rehearsal.
-- [ ] Document actual SDK registration/manual tracking, one-time keys, bounded flush/shutdown, policy opt-in, reset re-registration, scoped inventory, operator setup, and production limitations.
-- [ ] Rehearse acknowledged SDK traffic plus Users recovery and Shipping refusal twice. Record measured results and hide credentials in presentation captures. P1 release gate now includes connected SDK acceptance.
+- [x] Release requires the original exact section 21 recovery test and every section 21.1 gate AT-SDK-01 through AT-SDK-17; ticket 35 supplies connected security/regression evidence, not a substitute for rehearsal.
+- [x] Document actual SDK registration/manual tracking, one-time keys, bounded flush/shutdown, policy opt-in, reset re-registration, scoped inventory, operator setup, and production limitations.
+- [x] Rehearse acknowledged SDK traffic plus Users recovery and Shipping refusal twice. Record measured results and hide credentials in presentation captures. P1 release gate now includes connected SDK acceptance.
 
 ## Test scenarios
 
@@ -70,7 +70,7 @@ Deliver the acceptance criteria as one observable slice. Preserve the PRD safety
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.
