@@ -4,7 +4,7 @@
 
 **Blocked by:** Ticket 09, Ticket 30, Ticket 33.
 
-**Status:** ready-for-agent (authoring status; verify blockers before execution)
+**Status:** completed
 
 **Priority:** P0
 
@@ -18,10 +18,10 @@
 
 ## Acceptance criteria
 
-- [ ] Provide operator sign-in, project/environment selector, SDK setup, issue/rotate/revoke actions and transient one-time key display; no secrets in build config/storage/logs.
-- [ ] Render actual scope/provenance/last-acknowledged ingestion, baseline/latest versions, safe failures and unknown coverage; seeded activity is labelled.
-- [ ] Navigate inventory changes to existing incident/evidence/impact trace; declared/inferred links are not proof of zero/proven affected workflows.
-- [ ] Preserve backend-owned recovery polling, loading/error/empty/offline handling, keyboard focus and anti-slop layout; no decorative graph required.
+- [x] Provide operator sign-in, project/environment selector, SDK setup, issue/rotate/revoke actions and transient one-time key display; no secrets in build config/storage/logs.
+- [x] Render actual scope/provenance/last-acknowledged ingestion, baseline/latest versions, safe failures and unknown coverage; seeded activity is labelled.
+- [x] Navigate inventory changes to existing incident/evidence/impact trace; declared/inferred links are not proof of zero/proven affected workflows.
+- [x] Preserve backend-owned recovery polling, loading/error/empty/offline handling, keyboard focus and anti-slop layout; no decorative graph required.
 
 ## Test scenarios
 
@@ -53,8 +53,8 @@ One ticket per implementation run; no universal discovery/interception, producti
 
 ## Completion evidence
 
-- [ ] Retain observable backend/test results, scope, provenance, and requirement IDs.
-- [ ] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
-- [ ] Preserve other owners' changes and explicitly review staged paths.
-- [ ] After authorized feature push, append and separately push its log entry.
-- [ ] Mark complete only when acceptance criteria and verified blockers pass.
+- [x] Retain observable backend/test results, scope, provenance, and requirement IDs.
+- [x] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
+- [x] Preserve other owners' changes and explicitly review staged paths.
+- [x] After authorized feature push, append and separately push its log entry.
+- [x] Mark complete only when acceptance criteria and verified blockers pass.

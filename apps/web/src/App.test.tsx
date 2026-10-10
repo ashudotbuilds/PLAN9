@@ -1239,6 +1239,313 @@ describe('Web App - Operational Canvas & Operator Onboarding', () => {
       expect(screen.getByText('3. AFFECTED WORKFLOWS')).toBeInTheDocument();
     });
   });
+
+  it('Ticket 34: surfaces SDK onboarding strip, telemetry status, active session, and labelled seeded activity', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        id: 'prj_sdk_1',
+        name: 'SDK Onboarding Project',
+        environments: ['development'],
+        createdAt: '2026-10-11T00:00:00.000Z'
+      }
+    ]);
+    vi.spyOn(apiClient, 'listProviders').mockResolvedValue([
+      { id: 'users', name: 'Users API', baseUrl: 'http://127.0.0.1:4001', status: 'ready' }
+    ]);
+    vi.spyOn(apiClient, 'getProjectDetail').mockResolvedValue({
+      project: {
+        id: 'prj_sdk_1',
+        name: 'SDK Onboarding Project',
+        environments: ['development'],
+        createdAt: '2026-10-11T00:00:00.000Z'
+      },
+      environmentState: {
+        environment: 'development',
+        activeSessionId: 'sess-sdk-telemetry-01',
+        lastIngestAt: '2026-10-11T04:30:00.000Z'
+      },
+      keyMetadata: [
+        {
+          keyId: 'key_sdk_1',
+          prefix: 'dg_ing_preview',
+          environment: 'development',
+          status: 'active',
+          createdAt: '2026-10-11T04:00:00.000Z'
+        }
+      ],
+      collectionPolicy: { mode: 'metadata_only' }
+    });
+    vi.spyOn(apiClient, 'listDependencies').mockResolvedValue({
+      dependencies: [
+        {
+          dependencyId: 'dep_users_1',
+          name: 'users-api',
+          type: 'rest-api',
+          origin: 'http://127.0.0.1:4001',
+          confidence: 'observed',
+          health: 'healthy',
+          collectionPolicy: { version: '1', mode: 'metadata_only' },
+          registeredAt: '2026-10-11T04:10:00.000Z',
+          updatedAt: '2026-10-11T04:20:00.000Z',
+          observationCount: 3
+        }
+      ]
+    });
+    vi.spyOn(apiClient, 'getDemoState').mockResolvedValue({
+      projectId: 'prj_sdk_1',
+      environment: 'development',
+      sessionId: 'sess-sdk-telemetry-01',
+      status: 'ready',
+      providers: []
+    });
+
+    render(<App />);
+
+    // Verify SDK Integration & Telemetry Strip renders
+    await waitFor(() => {
+      expect(screen.getByText('SDK Integration & Telemetry Strip')).toBeInTheDocument();
+      expect(screen.getByText('RECEIVING (LIVE INGESTION)')).toBeInTheDocument();
+      expect(screen.getByText('sess-sdk-telemetry-01')).toBeInTheDocument();
+      expect(screen.getByText('SEEDED BASELINE ACTIVITY')).toBeInTheDocument();
+      expect(screen.getByText('LIVE SDK INGESTION')).toBeInTheDocument();
+      expect(screen.getByText('Host Isolation Active')).toBeInTheDocument();
+      expect(screen.getByText('UNKNOWN COVERAGE')).toBeInTheDocument();
+    });
+
+    // Verify Sample Consumer Snippet displays active project and key
+    expect(screen.getByText(/pnpm --filter @driftguard\/sample-consumer start/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copy command/i })).toBeInTheDocument();
+  });
+
+  it('Ticket 34: enforces transient one-time API key display and clears plaintext on dismissal and environment navigation', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        id: 'prj_keys_1',
+        name: 'Keys Project',
+        environments: ['development', 'production'],
+        createdAt: '2026-10-11T00:00:00.000Z'
+      }
+    ]);
+    vi.spyOn(apiClient, 'listProviders').mockResolvedValue([]);
+    vi.spyOn(apiClient, 'getDemoState').mockResolvedValue({
+      projectId: 'prj_keys_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      status: 'ready',
+      providers: []
+    });
+    vi.spyOn(apiClient, 'getProjectDetail').mockResolvedValue({
+      project: {
+        id: 'prj_keys_1',
+        name: 'Keys Project',
+        environments: ['development', 'production'],
+        createdAt: '2026-10-11T00:00:00.000Z'
+      },
+      environmentState: {
+        environment: 'development',
+        activeSessionId: 'sess_1',
+        lastIngestAt: null
+      },
+      keyMetadata: [],
+      collectionPolicy: { mode: 'metadata_only' }
+    });
+    vi.spyOn(apiClient, 'listDependencies').mockResolvedValue({ dependencies: [] });
+    vi.spyOn(apiClient, 'createIngestionKey')
+      .mockResolvedValueOnce({
+        keyId: 'key_transient_1',
+        apiKey: 'dg_ing_transient_secret_value_123',
+        prefix: 'dg_ing_preview',
+        environment: 'development',
+        auditEventId: 'aud_key_1'
+      })
+      .mockResolvedValueOnce({
+        keyId: 'key_transient_2',
+        apiKey: 'dg_ing_transient_secret_value_123',
+        prefix: 'dg_ing_preview',
+        environment: 'development',
+        auditEventId: 'aud_key_2'
+      });
+
+    render(<App />);
+
+    // Click Issue New Key
+    const issueBtn = await screen.findByRole('button', { name: /issue new key/i });
+    fireEvent.click(issueBtn);
+
+    // Verify one-time plaintext key is rendered
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('dg_ing_transient_secret_value_123')).toBeInTheDocument();
+      expect(screen.getByText('ONE-TIME PLAINTEXT API KEY')).toBeInTheDocument();
+    });
+
+    // Dismiss key
+    const dismissBtn = screen.getByRole('button', { name: /dismiss/i });
+    fireEvent.click(dismissBtn);
+
+    // Verify key display is cleared
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue('dg_ing_transient_secret_value_123')).not.toBeInTheDocument();
+    });
+
+    // Issue key again to test navigation clearing
+    fireEvent.click(issueBtn);
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('dg_ing_transient_secret_value_123')).toBeInTheDocument();
+    });
+
+    // Switch environment to production
+    const envSelect = screen.getByLabelText(/Environment Scope/i);
+    fireEvent.change(envSelect, { target: { value: 'production' } });
+
+    // Plaintext key must be cleared on navigation
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue('dg_ing_transient_secret_value_123')).not.toBeInTheDocument();
+    });
+  });
+
+  it('Ticket 34: navigates from dependency inventory and detail drawer to incident trace with lineage disclaimer', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        id: 'prj_dep_nav',
+        name: 'Navigation Project',
+        environments: ['development'],
+        createdAt: '2026-10-11T00:00:00.000Z'
+      }
+    ]);
+    vi.spyOn(apiClient, 'listProviders').mockResolvedValue([
+      { id: 'users', name: 'Users API', baseUrl: 'http://127.0.0.1:4001', status: 'ready' }
+    ]);
+    vi.spyOn(apiClient, 'getProjectDetail').mockResolvedValue({
+      project: {
+        id: 'prj_dep_nav',
+        name: 'Navigation Project',
+        environments: ['development'],
+        createdAt: '2026-10-11T00:00:00.000Z'
+      },
+      environmentState: {
+        environment: 'development',
+        activeSessionId: 'sess_nav_1',
+        lastIngestAt: '2026-10-11T04:00:00.000Z'
+      },
+      keyMetadata: [],
+      collectionPolicy: { mode: 'metadata_only' }
+    });
+    vi.spyOn(apiClient, 'listDependencies').mockResolvedValue({
+      dependencies: [
+        {
+          dependencyId: 'dep_users_1',
+          name: 'users',
+          type: 'rest-api',
+          origin: 'http://127.0.0.1:4001',
+          confidence: 'observed',
+          health: 'healthy',
+          collectionPolicy: { version: '1', mode: 'metadata_only' },
+          registeredAt: '2026-10-11T04:10:00.000Z',
+          updatedAt: '2026-10-11T04:20:00.000Z',
+          observationCount: 5
+        }
+      ]
+    });
+    vi.spyOn(apiClient, 'getDependencyDetail').mockResolvedValue({
+      dependency: {
+        dependencyId: 'dep_users_1',
+        name: 'users',
+        type: 'rest-api',
+        origin: 'http://127.0.0.1:4001',
+        confidence: 'observed',
+        health: 'healthy',
+        collectionPolicy: { version: '1', mode: 'metadata_only' },
+        registeredAt: '2026-10-11T04:10:00.000Z',
+        updatedAt: '2026-10-11T04:20:00.000Z',
+        observationCount: 5
+      },
+      endpoints: [
+        { method: 'GET', routeTemplate: '/users/:id', observedCount: 5 }
+      ],
+      evidenceHistory: [],
+      graphEdges: [
+        { source: 'users-client', target: 'users', provenance: 'runtime_read' }
+      ]
+    });
+    vi.spyOn(apiClient, 'getDemoState').mockResolvedValue({
+      projectId: 'prj_dep_nav',
+      environment: 'development',
+      sessionId: 'sess_nav_1',
+      status: 'ready',
+      providers: [],
+      incidents: [
+        {
+          id: 'inc_nav_123',
+          projectId: 'prj_dep_nav',
+          environment: 'development',
+          sessionId: 'sess_nav_1',
+          provider: 'users',
+          endpoint: '/users/:id',
+          fingerprint: 'fp_nav_123',
+          status: 'detected',
+          severity: 'high',
+          summary: 'Navigated drift incident on Users API',
+          detectedAt: '2026-10-11T04:15:00.000Z',
+          evidenceStrength: 'confirmed',
+          affectedWorkflows: ['welcome_email']
+        }
+      ]
+    });
+    const getIncidentSpy = vi.spyOn(apiClient, 'getIncident').mockResolvedValue({
+      id: 'inc_nav_123',
+      projectId: 'prj_dep_nav',
+      environment: 'development',
+      sessionId: 'sess_nav_1',
+      provider: 'users',
+      endpoint: '/users/:id',
+      fingerprint: 'fp_nav_123',
+      status: 'detected',
+      severity: 'high',
+      summary: 'Navigated drift incident on Users API',
+      detectedAt: '2026-10-11T04:15:00.000Z',
+      evidenceStrength: 'confirmed',
+      affectedWorkflows: ['welcome_email'],
+      findings: [],
+      beforeEvidence: {},
+      afterEvidence: {},
+      failedWorkflows: [],
+      auditEventId: 'aud_inc_nav'
+    });
+
+    render(<App />);
+
+    // Click "Inspect" on dependency to view details
+    const inspectBtn = await screen.findByRole('button', { name: /^inspect$/i });
+    fireEvent.click(inspectBtn);
+
+    // Verify detail drawer renders and has "Navigate to Incident & Impact Trace" button
+    const navBtn = await screen.findByRole('button', { name: /navigate to incident & impact trace/i });
+    expect(navBtn).toBeInTheDocument();
+    expect(
+      screen.getByText(/Declared\/inferred links are not proof of zero or proven affected workflows\./)
+    ).toBeInTheDocument();
+
+    // Click navigation button
+    fireEvent.click(navBtn);
+
+    // Verify getIncident was called and incident drawer is displayed
+    expect(getIncidentSpy).toHaveBeenCalledWith('inc_nav_123', 'prj_dep_nav', 'development');
+    await waitFor(() => {
+      expect(screen.getByText(/Incident Evidence Inspection \(A08\) — inc_nav_123/)).toBeInTheDocument();
+    });
+  });
 });
 
 

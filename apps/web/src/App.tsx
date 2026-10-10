@@ -18,7 +18,8 @@ import {
   IngestionKeyMetadata,
   DependencySummary,
   DependencyDetailResponse,
-  DependencyType
+  DependencyType,
+  ProjectDetailResponse
 } from '@driftguard/contracts';
 
 interface AuditTimelineEntry {
@@ -133,6 +134,26 @@ export function App() {
   const [resettingDemo, setResettingDemo] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
 
+  // Ticket 34: SDK Onboarding Dashboard & Telemetry State
+  const [projectDetail, setProjectDetail] = useState<ProjectDetailResponse | null>(null);
+
+  const handleNavigateToIncident = (depNameOrProvider: string) => {
+    const matching =
+      incidents.find(
+        (inc) =>
+          inc.provider.toLowerCase().includes(depNameOrProvider.toLowerCase()) ||
+          depNameOrProvider.toLowerCase().includes(inc.provider.toLowerCase())
+      ) || (incidents.length > 0 ? incidents[0] : null);
+    if (matching) {
+      handleSelectIncident(matching.id);
+      const el = document.getElementById('incident-inspection-drawer');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+        el.focus();
+      }
+    }
+  };
+
   const recordAudit = (id: string, action: string, summary: string, scope?: string) => {
     setAuditTimeline((prev) => [
       {
@@ -185,6 +206,7 @@ export function App() {
       }
       try {
         const detail = await apiClient.getProjectDetail(projId, env);
+        setProjectDetail(detail);
         if (detail.keyMetadata) {
           setKeyMetadata(detail.keyMetadata);
         }
@@ -237,7 +259,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    // Ticket 09: Project/environment changes clear stale incident/run views
+    // Ticket 09 & 34: Project/environment changes clear stale views and transient keys
     setSelectedIncident(null);
     setImpactAnalysis(null);
     setRepairProposal(null);
@@ -252,6 +274,8 @@ export function App() {
     setValidationError(null);
     setActivationError(null);
     setRecoveryError(null);
+    setIssuedApiKey(null); // Clear transient plaintext key on scope navigation
+    setSelectedDependencyDetail(null);
 
     if (selectedProjectId && isAuthenticated) {
       loadDemoState(selectedProjectId, selectedEnvironment);
@@ -1025,6 +1049,139 @@ export function App() {
           )}
         </section>
 
+        {/* Ticket 34: SDK Onboarding & Telemetry Strip (FR-UI-10, FR-INV-02, FR-KEY-01, FR-KEY-02, NFR-10, NFR-18, NFR-21) */}
+        <section aria-label="SDK Integration & Telemetry Strip" className="bg-[#161b22] border border-[#30363d] rounded p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center space-x-2">
+                <h2 className="text-sm font-semibold text-[#f0f6fc]">SDK Integration & Telemetry Strip</h2>
+                {dependencies.some((d) => d.observationCount > 0) || projectDetail?.environmentState.lastIngestAt ? (
+                  <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40">
+                    RECEIVING (LIVE INGESTION)
+                  </span>
+                ) : dependencies.length > 0 ? (
+                  <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-[#1f6feb]/20 text-[#58a6ff] border border-[#1f6feb]/40">
+                    REGISTERED (NOT OBSERVED)
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-[#8b949e]/20 text-[#8b949e] border border-[#8b949e]/40">
+                    AWAITING OBSERVATIONS
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[#8b949e]">
+                Connect the Node SDK or Sample Consumer to stream telemetry, inspect live ingestion diagnostics, and observe runtime behavior.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <span className="px-2 py-1 rounded text-[11px] font-mono bg-[#21262d] text-[#8b949e] border border-[#30363d]">
+                Scope: <strong className="text-[#58a6ff]">{selectedProjectId || 'none'}</strong>:<strong className="text-[#3fb950]">{selectedEnvironment}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => selectedProjectId && loadDemoState(selectedProjectId, selectedEnvironment)}
+                disabled={!selectedProjectId}
+                className="px-3 py-1 bg-[#21262d] hover:bg-[#30363d] text-xs font-medium text-[#c9d1d9] rounded border border-[#30363d] focus:outline-none focus:ring-2 focus:ring-[#58a6ff] cursor-pointer"
+              >
+                Refresh Telemetry
+              </button>
+            </div>
+          </div>
+
+          {/* Telemetry Status & Activity Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-mono">
+            <div className="p-3 bg-[#0d1117] border border-[#30363d] rounded space-y-1">
+              <span className="text-[#8b949e] block text-[11px]">ACTIVE SESSION & SCOPE</span>
+              <span className="text-[#58a6ff] font-semibold block truncate" title={projectDetail?.environmentState.activeSessionId || 'sess_active'}>
+                {projectDetail?.environmentState.activeSessionId || 'sess-active'}
+              </span>
+              <span className="text-[10px] text-[#8b949e] block">
+                Policy: <strong className="text-[#c9d1d9]">metadata_only</strong>
+              </span>
+            </div>
+
+            <div className="p-3 bg-[#0d1117] border border-[#30363d] rounded space-y-1">
+              <span className="text-[#8b949e] block text-[11px]">LAST ACKNOWLEDGED INGEST</span>
+              <span className="text-[#c9d1d9] font-semibold block">
+                {projectDetail?.environmentState.lastIngestAt
+                  ? new Date(projectDetail.environmentState.lastIngestAt).toLocaleTimeString()
+                  : 'Awaiting first batch'}
+              </span>
+              <span className="text-[10px] text-[#8b949e] block">
+                Active Keys: <strong className="text-[#58a6ff]">{keyMetadata.filter((k) => k.status === 'active').length}</strong>
+              </span>
+            </div>
+
+            <div className="p-3 bg-[#0d1117] border border-[#30363d] rounded space-y-1">
+              <span className="text-[#8b949e] block text-[11px]">PROVENANCE & LABELS</span>
+              <div className="flex flex-wrap gap-1 items-center pt-0.5">
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#8957e5]/20 text-[#d2a8ff] border border-[#8957e5]/40">
+                  SEEDED BASELINE ACTIVITY
+                </span>
+                {dependencies.some((d) => d.observationCount > 0) && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40">
+                    LIVE SDK INGESTION
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="p-3 bg-[#0d1117] border border-[#30363d] rounded space-y-1">
+              <span className="text-[#8b949e] block text-[11px]">COVERAGE & ISOLATION</span>
+              <span className="text-[#3fb950] font-semibold block text-[11px]">
+                Host Isolation Active
+              </span>
+              <span className="text-[10px] text-[#8b949e] block">
+                Untracked: <strong className="text-[#e3b341]">UNKNOWN COVERAGE</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* Quick Setup Code Snippet */}
+          <div className="p-3.5 bg-[#0d1117] border border-[#30363d] rounded space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-[#f0f6fc]">Sample Consumer / SDK Connection Snippet</span>
+              <span className="text-[#8b949e] text-[11px] font-mono">Zero secrets stored on frontend</span>
+            </div>
+            <pre className="p-2.5 bg-[#161b22] border border-[#21262d] rounded text-[11px] font-mono text-[#58a6ff] overflow-x-auto whitespace-pre">
+{`# Run sample consumer against active project and environment
+$env:DRIFTGUARD_PROJECT_ID="${selectedProjectId || 'prj_demo_default'}"
+$env:DRIFTGUARD_ENV="${selectedEnvironment}"
+$env:DRIFTGUARD_KEY="${issuedApiKey ? issuedApiKey.apiKey : (keyMetadata.find((k) => k.status === 'active')?.prefix || '<ACTIVE_KEY>')}"
+pnpm --filter @driftguard/sample-consumer start`}
+            </pre>
+            <div className="flex items-center justify-between text-[11px] text-[#8b949e]">
+              <span>
+                {keyMetadata.some((k) => k.status === 'active')
+                  ? `Active key prefix: ${keyMetadata.find((k) => k.status === 'active')?.prefix}`
+                  : 'No active key for this environment. Issue a key below before connecting.'}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const cmd = `export DRIFTGUARD_PROJECT_ID="${selectedProjectId}"\nexport DRIFTGUARD_ENV="${selectedEnvironment}"\npnpm --filter @driftguard/sample-consumer start`;
+                  navigator.clipboard?.writeText(cmd);
+                }}
+                className="px-2.5 py-1 bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] rounded text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#58a6ff]"
+              >
+                Copy Command
+              </button>
+            </div>
+          </div>
+
+          {/* Safety Gate & Provenance Disclosure Notice */}
+          <div className="p-2.5 bg-[#21262d]/50 border border-[#30363d] rounded text-[11px] text-[#8b949e] space-y-1">
+            <div className="flex items-center space-x-1.5 text-[#f0f6fc] font-medium">
+              <span>PRD Invariant & Lineage Notice:</span>
+            </div>
+            <p>
+              Declared dependency identity and inferred links are not proof of zero affected workflows.
+              Lineage blast radius requires runtime read observation. Provider host operations remain unaffected by telemetry outages.
+            </p>
+          </div>
+        </section>
+
         {/* Ticket 09: Dependency Rail (A14) */}
         <section aria-label="Dependency Rail" className="bg-[#161b22] border border-[#30363d] rounded p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1314,13 +1471,21 @@ export function App() {
                     </td>
                     <td className="py-2 px-3 text-[#c9d1d9]">{d.collectionPolicy.mode}</td>
                     <td className="py-2 px-3 text-[#c9d1d9]">{d.observationCount}</td>
-                    <td className="py-2 px-3 text-right">
+                    <td className="py-2 px-3 text-right space-x-1.5">
                       <button
                         type="button"
                         onClick={() => handleViewDependencyDetail(d.dependencyId)}
-                        className="px-2 py-0.5 bg-[#1f6feb]/20 hover:bg-[#1f6feb]/30 text-[#58a6ff] border border-[#1f6feb]/40 rounded text-[10px]"
+                        className="px-2 py-0.5 bg-[#1f6feb]/20 hover:bg-[#1f6feb]/30 text-[#58a6ff] border border-[#1f6feb]/40 rounded text-[10px] focus:outline-none focus:ring-1 focus:ring-[#58a6ff]"
                       >
                         Inspect
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleNavigateToIncident(d.name)}
+                        className="px-2 py-0.5 bg-[#d29922]/20 hover:bg-[#d29922]/30 text-[#e3b341] border border-[#d29922]/40 rounded text-[10px] focus:outline-none focus:ring-1 focus:ring-[#58a6ff]"
+                        title="Navigate to related incident & causal impact trace"
+                      >
+                        Trace
                       </button>
                     </td>
                   </tr>
@@ -1448,6 +1613,20 @@ export function App() {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Ticket 34: Navigate to Incident & Impact Trace */}
+              <div className="pt-2 border-t border-[#30363d] flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleNavigateToIncident(selectedDependencyDetail.dependency.name)}
+                  className="px-3 py-1 bg-[#d29922]/20 hover:bg-[#d29922]/30 text-[#e3b341] border border-[#d29922]/40 rounded text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-[#58a6ff] cursor-pointer"
+                >
+                  Navigate to Incident &amp; Impact Trace (A08/A09)
+                </button>
+                <span className="text-[10px] text-[#8b949e]">
+                  Declared/inferred links are not proof of zero or proven affected workflows.
+                </span>
               </div>
             </div>
           )}
@@ -1764,7 +1943,11 @@ export function App() {
               </div>
 
               {selectedIncident && (
-                <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded space-y-3 mt-3">
+                <div
+                  id="incident-inspection-drawer"
+                  tabIndex={-1}
+                  className="p-4 bg-[#0d1117] border border-[#30363d] rounded space-y-3 mt-3 focus:outline-none focus:ring-1 focus:ring-[#58a6ff]"
+                >
                   <div className="flex flex-wrap items-center justify-between border-b border-[#21262d] pb-2 gap-2">
                     <div className="flex items-center space-x-2">
                       <h4 className="text-xs font-semibold text-[#f0f6fc]">
