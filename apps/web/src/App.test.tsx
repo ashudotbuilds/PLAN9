@@ -399,6 +399,132 @@ describe('Web App - Operational Canvas & Operator Onboarding', () => {
       expect(screen.getByText(/Consumes inventory items only/)).toBeInTheDocument();
     });
   });
+
+  it('allows proposing compatible adapter and renders proposal diff and rules', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        id: 'prj_test_1',
+        name: 'Test Project',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        environments: ['development', 'production']
+      }
+    ]);
+    vi.spyOn(apiClient, 'getDemoState').mockResolvedValue({
+      projectId: 'prj_test_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      status: 'ready',
+      providers: [],
+      baseline: {
+        id: 'base_1',
+        projectId: 'prj_test_1',
+        environment: 'development',
+        sessionId: 'sess_1',
+        version: 1,
+        fingerprint: 'abc1234567890def',
+        capturedAt: '2026-10-11T01:00:00.000Z',
+        status: 'captured',
+        fixtures: { usersCount: 3, inventoryItemsCount: 3, shippingCalculated: true }
+      },
+      incidents: [
+        {
+          id: 'inc_123',
+          projectId: 'prj_test_1',
+          environment: 'development',
+          sessionId: 'sess_1',
+          provider: 'users',
+          endpoint: '/users/:id',
+          fingerprint: 'fingerprint_123',
+          status: 'detected',
+          severity: 'high',
+          summary: "Breaking schema change: provider field 'name' renamed to 'display_name'",
+          detectedAt: '2026-10-11T01:30:00.000Z',
+          evidenceStrength: 'confirmed',
+          affectedWorkflows: ['welcome_email', 'customer_profile']
+        }
+      ]
+    });
+    vi.spyOn(apiClient, 'getIncident').mockResolvedValue({
+      id: 'inc_123',
+      projectId: 'prj_test_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      provider: 'users',
+      endpoint: '/users/:id',
+      fingerprint: 'fingerprint_123',
+      status: 'detected',
+      severity: 'high',
+      summary: "Breaking schema change: provider field 'name' renamed to 'display_name'",
+      detectedAt: '2026-10-11T01:30:00.000Z',
+      evidenceStrength: 'confirmed',
+      affectedWorkflows: ['welcome_email', 'customer_profile'],
+      findings: [],
+      beforeEvidence: { users: [] },
+      afterEvidence: { users: [] },
+      failedWorkflows: [
+        { workflowId: 'welcome_email', reason: 'Missing name' }
+      ],
+      auditEventId: 'aud_inc_1'
+    });
+    const proposeSpy = vi.spyOn(apiClient, 'proposeRepair').mockResolvedValue({
+      proposal: {
+        id: 'adp_prop_123',
+        incidentId: 'inc_123',
+        source: 'deterministic_fallback',
+        recommendation: 'recommended',
+        confidence: 0.95,
+        patch: {
+          id: 'patch_123',
+          hash: 'hash_123',
+          provider: 'users',
+          targetEntity: 'CanonicalUser',
+          version: 2,
+          rules: [
+            {
+              op: 'coalesce',
+              sources: ['display_name', 'name'],
+              targetField: 'displayName'
+            }
+          ],
+          preservedFields: ['id'],
+          diff: '@@ -1,3 +1,5 @@\n-    displayName: record.name\n+    displayName: record.display_name ?? record.name'
+        },
+        uncertainties: [],
+        evidenceRefs: ['inc_123'],
+        requiredChecks: ['baseline_replay', 'shadow_canary'],
+        createdAt: '2026-10-11T02:00:00.000Z',
+        auditEventId: 'aud_prop_123'
+      },
+      auditEventId: 'aud_prop_123'
+    });
+
+    render(<App />);
+
+    // Click the incident badge to open inspection drawer
+    const incidentCard = await screen.findByText(/Breaking schema change: provider field 'name' renamed/);
+    fireEvent.click(incidentCard);
+
+    // Verify incident drawer is open
+    await waitFor(() => {
+      expect(screen.getByText(/Incident Evidence Inspection \(A08\)/)).toBeInTheDocument();
+    });
+
+    // Click Propose Compatible Adapter button
+    const proposeBtn = screen.getByRole('button', { name: /propose compatible adapter/i });
+    fireEvent.click(proposeBtn);
+
+    expect(proposeSpy).toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(screen.getByText(/adp_prop_123/)).toBeInTheDocument();
+      expect(screen.getByText(/deterministic_fallback/)).toBeInTheDocument();
+      expect(screen.getByText(/display_name, name/)).toBeInTheDocument();
+    });
+  });
 });
 
 

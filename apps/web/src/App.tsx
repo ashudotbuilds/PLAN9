@@ -8,7 +8,8 @@ import {
   ReplayWorkflowResponse,
   IncidentSummary,
   IncidentDetail,
-  AnalyzeImpactResponse
+  AnalyzeImpactResponse,
+  RepairProposal
 } from '@driftguard/contracts';
 
 export function App() {
@@ -52,6 +53,11 @@ export function App() {
   const [analyzingImpact, setAnalyzingImpact] = useState(false);
   const [impactAnalysis, setImpactAnalysis] = useState<AnalyzeImpactResponse | null>(null);
   const [impactError, setImpactError] = useState<string | null>(null);
+
+  // Ticket 05: Repair Proposal
+  const [proposingRepair, setProposingRepair] = useState(false);
+  const [repairProposal, setRepairProposal] = useState<RepairProposal | null>(null);
+  const [proposalError, setProposalError] = useState<string | null>(null);
 
 
   const fetchStatus = async () => {
@@ -231,6 +237,11 @@ export function App() {
       } else {
         setImpactAnalysis(null);
       }
+      if (detail.proposals && detail.proposals.length > 0) {
+        setRepairProposal(detail.proposals[detail.proposals.length - 1]);
+      } else {
+        setRepairProposal(null);
+      }
     } catch (err) {
       alert((err as Error).message);
     } finally {
@@ -253,6 +264,29 @@ export function App() {
       setImpactError((err as Error).message || 'Failed to analyze impact.');
     } finally {
       setAnalyzingImpact(false);
+    }
+  };
+
+  const handleProposeRepair = async (incidentId: string) => {
+    setProposingRepair(true);
+    setProposalError(null);
+    try {
+      const res = await apiClient.proposeRepair(
+        incidentId,
+        selectedProjectId,
+        selectedEnvironment,
+        baseline?.sessionId
+      );
+      setRepairProposal(res.proposal);
+      setSelectedIncident((prev) => {
+        if (!prev) return null;
+        const proposals = prev.proposals ? [...prev.proposals, res.proposal] : [res.proposal];
+        return { ...prev, proposals };
+      });
+    } catch (err) {
+      setProposalError((err as Error).message || 'Failed to propose repair.');
+    } finally {
+      setProposingRepair(false);
     }
   };
 
@@ -897,6 +931,87 @@ export function App() {
                             ))}
                           </div>
                         )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Ticket 05: Constrained Compatible Adapter Proposal (A10) */}
+                  <div className="pt-3 border-t border-[#21262d] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h5 className="text-xs font-semibold text-[#f0f6fc]">
+                          Constrained Compatible Adapter Proposal (A10)
+                        </h5>
+                        <p className="text-[11px] text-[#8b949e]">
+                          Deterministic RepairModel: rename/coalesce adapter synthesis with invariant guarantees
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleProposeRepair(selectedIncident.id)}
+                        disabled={proposingRepair}
+                        className="px-3 py-1 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white rounded text-xs font-medium transition cursor-pointer"
+                      >
+                        {proposingRepair ? 'Proposing Repair...' : 'Propose Compatible Adapter (A10)'}
+                      </button>
+                    </div>
+
+                    {proposalError && (
+                      <div className="p-2 bg-[#da3633]/10 border border-[#da3633]/30 rounded text-[#f85149] font-mono text-xs">
+                        {proposalError}
+                      </div>
+                    )}
+
+                    {(repairProposal || (selectedIncident.proposals && selectedIncident.proposals[0])) && (
+                      <div className="p-3 bg-[#161b22] border border-[#238636]/40 rounded space-y-3 font-mono text-xs">
+                        {/* Header Badges */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#21262d] pb-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40">
+                              RECOMMENDED
+                            </span>
+                            <span className="text-[#f0f6fc] font-semibold text-[11px]">
+                              {`Confidence: ${Math.round(((repairProposal || selectedIncident.proposals?.[0])?.confidence || 0) * 100)}%`}
+                            </span>
+                            <span className="text-[#8b949e] text-[10px]">
+                              {`Source: ${(repairProposal || selectedIncident.proposals?.[0])?.source}`}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-[#8b949e]">
+                            {`Proposal ID: ${(repairProposal || selectedIncident.proposals?.[0])?.id}`}
+                          </span>
+                        </div>
+
+                        {/* Adapter Diff */}
+                        <div className="space-y-1">
+                          <span className="text-[#8b949e] text-[10px] font-bold block">SYNTHESIZED ADAPTER DIFF:</span>
+                          <pre className="p-2.5 bg-[#0d1117] border border-[#30363d] rounded text-[11px] text-[#58a6ff] overflow-x-auto whitespace-pre-wrap">
+                            {(repairProposal || selectedIncident.proposals?.[0])?.patch.diff}
+                          </pre>
+                        </div>
+
+                        {/* Rules & Preservation */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+                          <div className="p-2 bg-[#0d1117] border border-[#21262d] rounded space-y-1">
+                            <span className="text-[#8b949e] text-[10px] font-bold block">SYNTHESIS RULES:</span>
+                            {(repairProposal || selectedIncident.proposals?.[0])?.patch.rules.map((r, i) => (
+                              <div key={i} className="text-[#3fb950]">
+                                • {r.targetField} ← {r.op}([ {r.sources.join(', ')} ])
+                              </div>
+                            ))}
+                            <div className="text-[#8b949e] text-[10px] pt-1">
+                              Preserved: {((repairProposal || selectedIncident.proposals?.[0])?.patch.preservedFields || []).join(', ')}
+                            </div>
+                          </div>
+
+                          <div className="p-2 bg-[#0d1117] border border-[#21262d] rounded space-y-1">
+                            <span className="text-[#8b949e] text-[10px] font-bold block">MANDATORY GATES / CHECKS:</span>
+                            {(repairProposal || selectedIncident.proposals?.[0])?.requiredChecks.map((c, i) => (
+                              <div key={i} className="text-[#e3b341]">
+                                ✓ {c}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>

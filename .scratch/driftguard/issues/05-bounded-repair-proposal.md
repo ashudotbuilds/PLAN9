@@ -4,9 +4,9 @@
 
 **Blocked by:** [04 - Explain affected and unaffected workflows](04-explain-impact.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
-**Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
+**Planning readiness:** Completed and verified across contracts, API, and web UI.
 
 **Priority:** P0
 
@@ -20,14 +20,14 @@
 
 ## Acceptance criteria
 
-- [ ] Build an evidence bundle containing observations, canonical contract, workflows, fixtures, invariants, and allowed operations.
-- [ ] Required deterministic RepairModel proposes coalesce [display_name, name] to displayName and labels source deterministic_fallback.
-- [ ] P0 permits only rename/coalesce over known source and canonical paths; reject extra keys and every other operation.
-- [ ] Show evidence references, uncertainties, required checks, recommendation, and adapter diff.
-- [ ] Preserve id in the canonical projection; candidate execution cannot mutate active behavior or raw evidence.
+- [x] Build an evidence bundle containing observations, canonical contract, workflows, fixtures, invariants, and allowed operations.
+- [x] Required deterministic RepairModel proposes coalesce [display_name, name] to displayName and labels source deterministic_fallback.
+- [x] P0 permits only rename/coalesce over known source and canonical paths; reject extra keys and every other operation.
+- [x] Show evidence references, uncertainties, required checks, recommendation, and adapter diff.
+- [x] Preserve id in the canonical projection; candidate execution cannot mutate active behavior or raw evidence.
 
-- [ ] Bundle only compatible, scoped sanitized evidence, preserving control-plane versus customer-reported SDK sources, policy versions, maturity, and limitations.
-- [ ] Metadata-only SDK fingerprints or inferred lineage cannot supply value-equivalence proof. Controlled three-identity HTTP evidence and existing workflow invariants remain required for the deterministic proposal.
+- [x] Bundle only compatible, scoped sanitized evidence, preserving control-plane versus customer-reported SDK sources, policy versions, maturity, and limitations.
+- [x] Metadata-only SDK fingerprints or inferred lineage cannot supply value-equivalence proof. Controlled three-identity HTTP evidence and existing workflow invariants remain required for the deterministic proposal.
 
 ## Test scenarios
 
@@ -52,7 +52,7 @@ Deliver the acceptance criteria as one observable slice. Preserve the PRD safety
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.

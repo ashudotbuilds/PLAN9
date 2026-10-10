@@ -451,6 +451,23 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     return reply.status(200).send(result);
   });
 
+  // A10: Propose Repair (Constrained Compatible Adapter)
+  app.post('/api/incidents/:incidentId/propose-repair', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const { incidentId } = request.params as { incidentId: string };
+    const query = request.query as { projectId?: string; environment?: string; sessionId?: string };
+    const body = (request.body as { projectId?: string; environment?: string; sessionId?: string; model?: string } | undefined) || {};
+
+    const envCandidate = body.environment || query.environment;
+    const envParsed = envCandidate ? ProjectEnvironmentSchema.safeParse(envCandidate) : null;
+    const environment = envParsed && envParsed.success ? envParsed.data : 'development';
+    const projectId = body.projectId || query.projectId || 'prj_demo_default';
+    const sessionId = body.sessionId || query.sessionId;
+    const model = body.model || 'deterministic_fallback';
+
+    const result = incidentService.proposeRepair(incidentId, projectId, environment, sessionId, model);
+    return reply.status(200).send(result);
+  });
+
   return app;
 }
 

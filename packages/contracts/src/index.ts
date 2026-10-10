@@ -459,6 +459,60 @@ export const AnalyzeImpactResponseSchema = z.object({
 });
 export type AnalyzeImpactResponse = z.infer<typeof AnalyzeImpactResponseSchema>;
 
+// Ticket 05: Constrained Compatible Adapter Proposal (A10)
+export const RepairSourceSchema = z.enum([
+  'deterministic_fallback',
+  'model_proposal',
+  'manual_edit'
+]);
+export type RepairSource = z.infer<typeof RepairSourceSchema>;
+
+export const AdapterRuleSchema = z.object({
+  targetField: z.string(),
+  op: RepairOpSchema,
+  sources: z.array(z.string()),
+  fallback: z.unknown().optional()
+});
+export type AdapterRule = z.infer<typeof AdapterRuleSchema>;
+
+export const AdapterPatchSchema = z.object({
+  id: z.string(),
+  hash: z.string(),
+  provider: z.string(),
+  targetEntity: z.string(),
+  version: z.number().int().positive(),
+  rules: z.array(AdapterRuleSchema),
+  preservedFields: z.array(z.string()),
+  diff: z.string()
+});
+export type AdapterPatch = z.infer<typeof AdapterPatchSchema>;
+
+export const RepairProposalSchema = z.object({
+  id: z.string(),
+  incidentId: z.string(),
+  source: RepairSourceSchema,
+  patch: AdapterPatchSchema,
+  recommendation: z.enum(['recommended', 'review_required', 'rejected']),
+  confidence: z.number().min(0).max(1),
+  evidenceRefs: z.array(z.string()),
+  uncertainties: z.array(z.string()),
+  requiredChecks: z.array(z.string()),
+  createdAt: z.string().datetime(),
+  auditEventId: z.string()
+});
+export type RepairProposal = z.infer<typeof RepairProposalSchema>;
+
+export const ProposeRepairRequestSchema = z.object({
+  model: z.enum(['deterministic_fallback', 'custom']).optional()
+});
+export type ProposeRepairRequest = z.infer<typeof ProposeRepairRequestSchema>;
+
+export const ProposeRepairResponseSchema = z.object({
+  proposal: RepairProposalSchema,
+  auditEventId: z.string()
+});
+export type ProposeRepairResponse = z.infer<typeof ProposeRepairResponseSchema>;
+
 export const IncidentDetailSchema = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -483,6 +537,7 @@ export const IncidentDetailSchema = z.object({
     })
   ),
   impactAnalysis: AnalyzeImpactResponseSchema.optional(),
+  proposals: z.array(RepairProposalSchema).optional(),
   auditEventId: z.string()
 });
 export type IncidentDetail = z.infer<typeof IncidentDetailSchema>;

@@ -27,7 +27,9 @@ import {
   IncidentDetail,
   IncidentDetailResponseSchema,
   AnalyzeImpactResponse,
-  AnalyzeImpactResponseSchema
+  AnalyzeImpactResponseSchema,
+  ProposeRepairResponse,
+  ProposeRepairResponseSchema
 } from '@driftguard/contracts';
 
 
@@ -320,6 +322,31 @@ export class ApiClient {
 
     const data = await res.json();
     return AnalyzeImpactResponseSchema.parse(data);
+  }
+
+  async proposeRepair(
+    incidentId: string,
+    projectId: string,
+    environment: ProjectEnvironment,
+    sessionId?: string,
+    model?: string
+  ): Promise<ProposeRepairResponse> {
+    const res = await fetch(`${this.apiBase}/incidents/${incidentId}/propose-repair`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ projectId, environment, sessionId, model })
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error?.message || `Failed to propose repair: ${res.status}`);
+    }
+
+    const data = await res.json();
+    return ProposeRepairResponseSchema.parse(data);
   }
 }
 

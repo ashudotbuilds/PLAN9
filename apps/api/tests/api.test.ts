@@ -837,6 +837,168 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(body.unknownWorkflows.every((w: any) => w.status === 'unknown')).toBe(true);
     });
   });
+
+  describe('A10 & A08: Constrained Compatible Adapter Proposal', () => {
+    it('proposes constrained compatible adapter with deterministic fallback and preserves id', async () => {
+      let isRenamed = false;
+      const mockFetch = vi.fn(async (url: any) => {
+        const u = String(url);
+        if (u.includes('/users/u-123')) {
+          return { ok: true, json: async () => isRenamed ? { id: 'u-123', display_name: 'Aarav' } : { id: 'u-123', name: 'Aarav' } };
+        }
+        if (u.includes('/users/u-456')) {
+          return { ok: true, json: async () => isRenamed ? { id: 'u-456', display_name: 'Meera' } : { id: 'u-456', name: 'Meera' } };
+        }
+        if (u.includes('/users/u-789')) {
+          return { ok: true, json: async () => isRenamed ? { id: 'u-789', display_name: 'Kabir' } : { id: 'u-789', name: 'Kabir' } };
+        }
+        if (u.includes('/inventory/items')) {
+          return { ok: true, json: async () => ({ items: [{ id: '1', sku: 'A', quantity: 10, in_stock: true }], total: 1 }) };
+        }
+        if (u.includes('/shipping/estimate')) {
+          return { ok: true, json: async () => ({ estimated_delivery_date: '2026-10-18' }) };
+        }
+        if (u.includes('/scenarios/users.field-rename/inject')) {
+          isRenamed = true;
+          return { ok: true, json: async () => ({ ok: true, activeScenarios: ['users.field-rename'] }) };
+        }
+        return { ok: false, status: 404 };
+      });
+
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService, AdapterRuntime } = await import('../src/services/incident-service.js');
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      // Setup baseline & incident
+      await baselineService.captureBaseline('prj_demo_default', 'development', 'sess_test');
+      await testApp.inject({
+        method: 'POST',
+        url: '/api/scenarios/users.field-rename/inject',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken, [IDEMPOTENCY_KEY_HEADER]: 'idem-inj-prop' },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_test' }
+      });
+
+      const obsRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/observations/run',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken, [IDEMPOTENCY_KEY_HEADER]: 'idem-obs-prop' },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_test' }
+      });
+      const incidentId = obsRes.json().incident.id;
+
+      // Propose repair via A10
+      const propRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/propose-repair`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+
+      expect(propRes.statusCode).toBe(200);
+      const { proposal, auditEventId } = propRes.json();
+      expect(proposal.id).toMatch(/^prop_/);
+      expect(proposal.incidentId).toBe(incidentId);
+      expect(proposal.patch.provider).toBe('users');
+      expect(proposal.source).toBe('deterministic_fallback');
+      expect(proposal.confidence).toBe(0.95);
+      expect(proposal.uncertainties).toEqual([]);
+      expect(proposal.evidenceRefs).toContain(incidentId);
+      expect(proposal.requiredChecks.length).toBeGreaterThan(0);
+
+      // Verify patch rules
+      const patch = proposal.patch;
+      expect(patch.rules.length).toBe(1);
+      const rule = patch.rules[0];
+      expect(rule.op).toBe('coalesce');
+      expect(rule.sources).toEqual(['display_name', 'name']);
+      expect(rule.targetField).toBe('displayName');
+      expect(patch.preservedFields).toContain('id');
+      expect(patch.diff).toContain('+displayName: raw.display_name ?? raw.name');
+
+      // Test AdapterRuntime.apply directly
+      const oldRec = { id: 'usr_1', name: 'Alice Old' };
+      const newRec = { id: 'usr_2', display_name: 'Bob New' };
+      const bothRec = { id: 'usr_3', display_name: 'Charlie Priority', name: 'Charlie Deprecated' };
+      const emptyRec = { id: 'usr_4' };
+
+      expect(AdapterRuntime.apply(oldRec, patch)).toEqual({ id: 'usr_1', displayName: 'Alice Old' });
+      expect(AdapterRuntime.apply(newRec, patch)).toEqual({ id: 'usr_2', displayName: 'Bob New' });
+      expect(AdapterRuntime.apply(bothRec, patch)).toEqual({ id: 'usr_3', displayName: 'Charlie Priority' });
+      expect(AdapterRuntime.apply(emptyRec, patch)).toEqual({ id: 'usr_4', displayName: undefined });
+
+      // Verify incident detail (A08) now includes the proposal
+      const detailRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/incidents/${incidentId}?projectId=prj_demo_default&environment=development`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      expect(detailRes.statusCode).toBe(200);
+      const detail = detailRes.json();
+      expect(detail.incident.proposals).toBeDefined();
+      expect(detail.incident.proposals.length).toBe(1);
+      expect(detail.incident.proposals[0].id).toBe(proposal.id);
+    });
+
+    it('returns 404 INCIDENT_NOT_FOUND when proposing repair for unknown incident', async () => {
+      const mockFetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }));
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/incidents/inc_unknown/propose-repair',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error.code).toBe('INCIDENT_NOT_FOUND');
+    });
+
+    it('returns 422 REPAIR_SYNTHESIS_FAILED when incident has insufficient evidence', async () => {
+      const mockFetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }));
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+
+      (incidentService as any).incidents.set('inc_weak', {
+        id: 'inc_weak',
+        projectId: 'prj_demo_default',
+        environment: 'development',
+        sessionId: 'sess_weak',
+        provider: 'inventory',
+        endpoint: '/api/v1/items',
+        fingerprint: 'fp_weak',
+        status: 'open',
+        severity: 'low',
+        summary: 'Unknown drift',
+        detectedAt: new Date().toISOString(),
+        evidenceStrength: 'tentative',
+        affectedWorkflows: [],
+        findings: [],
+        beforeEvidence: {},
+        afterEvidence: {},
+        failedWorkflows: [],
+        auditEventId: 'aud_weak'
+      });
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/incidents/inc_weak/propose-repair',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+      expect(res.statusCode).toBe(422);
+      expect(res.json().error.code).toBe('UNSUPPORTED_DRIFT');
+    });
+  });
 });
 
 

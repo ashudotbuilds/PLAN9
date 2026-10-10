@@ -1,11 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  AdapterPatch,
+  AdapterRule,
   AnalyzeImpactResponse,
   Finding,
   IncidentDetail,
   IncidentSummary,
   LineageProvenance,
   ProjectEnvironment,
+  RepairProposal,
   TracePath,
   WorkflowId,
   WorkflowImpact
@@ -467,4 +470,157 @@ export class IncidentService {
     incident.impactAnalysis = analysis;
     return analysis;
   }
+
+  proposeRepair(
+    incidentId: string,
+    projectId: string,
+    environment: ProjectEnvironment,
+    sessionId?: string,
+    _model: string = 'deterministic_fallback'
+  ): { proposal: RepairProposal; auditEventId: string } {
+    const incident = this.getIncident(incidentId, projectId, environment);
+    if (!incident) {
+      const err = new Error(`Incident '${incidentId}' not found.`);
+      (err as any).statusCode = 404;
+      (err as any).code = 'INCIDENT_NOT_FOUND';
+      throw err;
+    }
+
+    if (sessionId && incident.sessionId !== sessionId) {
+      const err = new Error(`Incident '${incidentId}' does not belong to active session.`);
+      (err as any).statusCode = 404;
+      (err as any).code = 'INCIDENT_NOT_FOUND';
+      throw err;
+    }
+
+    // P0 safety gate: limited evidence or uncorroborated single sample gets hold
+    if (incident.evidenceStrength !== 'confirmed') {
+      const err = new Error('Insufficient evidence strength for automatic repair proposal. Requires 3 corroborated fixtures.');
+      (err as any).statusCode = 422;
+      (err as any).code = 'UNSUPPORTED_DRIFT';
+      throw err;
+    }
+
+    // Check if incident findings support deterministic rename/coalesce
+    const isUserFieldRename =
+      incident.provider === 'users' &&
+      incident.findings.some(f => f.type === 'field_removed' && f.fieldName === 'name') &&
+      incident.findings.some(f => f.type === 'field_added' && f.fieldName === 'display_name');
+
+    if (!isUserFieldRename) {
+      const err = new Error('No supported deterministic repair pattern for this incident drift.');
+      (err as any).statusCode = 422;
+      (err as any).code = 'UNSUPPORTED_DRIFT';
+      throw err;
+    }
+
+    // P0 permits only rename/coalesce over known source and canonical paths
+    const rules: AdapterRule[] = [
+      {
+        targetField: 'displayName',
+        op: 'coalesce',
+        sources: ['display_name', 'name']
+      }
+    ];
+    const preservedFields = ['id'];
+
+    const patchPayload = {
+      provider: 'users',
+      targetEntity: 'CanonicalUser',
+      rules,
+      preservedFields
+    };
+    const patchHash = createHash('sha256').update(JSON.stringify(patchPayload)).digest('hex');
+    const patchId = `patch_${patchHash.slice(0, 12)}`;
+
+    const diff = `--- CanonicalUserAdapter.v1
++++ CanonicalUserAdapter.v2 (proposed)
+@@ -1,3 +1,3 @@
+ id: raw.id
+-displayName: raw.name
++displayName: raw.display_name ?? raw.name`;
+
+    const patch: AdapterPatch = {
+      id: patchId,
+      hash: patchHash,
+      provider: 'users',
+      targetEntity: 'CanonicalUser',
+      version: 2,
+      rules,
+      preservedFields,
+      diff
+    };
+
+    const proposalId = `prop_${randomUUID().slice(0, 8)}`;
+    const auditEventId = `aud_${randomUUID().slice(0, 8)}`;
+
+    const proposal: RepairProposal = {
+      id: proposalId,
+      incidentId,
+      source: 'deterministic_fallback',
+      patch,
+      recommendation: 'recommended',
+      confidence: 0.95,
+      evidenceRefs: [incident.id, ...incident.findings.map(f => f.id)],
+      uncertainties: [],
+      requiredChecks: [
+        'shadow_validation_v1',
+        'workflow_replay_welcome_email',
+        'workflow_replay_customer_profile'
+      ],
+      createdAt: new Date().toISOString(),
+      auditEventId
+    };
+
+    if (!incident.proposals) {
+      incident.proposals = [];
+    }
+    const existing = incident.proposals.find(p => p.patch.hash === patchHash);
+    if (!existing) {
+      incident.proposals.push(proposal);
+    }
+
+    return { proposal, auditEventId };
+  }
 }
+
+export class AdapterRuntime {
+  static apply(raw: Record<string, unknown>, patch: AdapterPatch): Record<string, unknown> {
+    const safePrototypeKeys = new Set(['__proto__', 'constructor', 'prototype']);
+    const result: Record<string, unknown> = {};
+
+    // 1. Preserve explicitly preserved fields
+    for (const field of patch.preservedFields) {
+      if (safePrototypeKeys.has(field)) continue;
+      if (Object.prototype.hasOwnProperty.call(raw, field)) {
+        result[field] = raw[field];
+      }
+    }
+
+    // 2. Apply rules
+    for (const rule of patch.rules) {
+      if (safePrototypeKeys.has(rule.targetField)) continue;
+      if (rule.op === 'coalesce') {
+        let val: unknown = undefined;
+        for (const src of rule.sources) {
+          if (safePrototypeKeys.has(src)) continue;
+          if (raw[src] !== undefined && raw[src] !== null) {
+            val = raw[src];
+            break;
+          }
+        }
+        result[rule.targetField] = val !== undefined ? val : rule.fallback;
+      } else if (rule.op === 'rename') {
+        const src = rule.sources[0];
+        if (src && !safePrototypeKeys.has(src)) {
+          result[rule.targetField] = raw[src] !== undefined ? raw[src] : rule.fallback;
+        }
+      } else {
+        throw new Error(`Unsupported repair op: ${rule.op}`);
+      }
+    }
+
+    return result;
+  }
+}
+
