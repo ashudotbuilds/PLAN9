@@ -146,7 +146,7 @@ export class BaselineService {
       })();
 
       const shipPromise = (async () => {
-        const res = await this.fetchFn(`${this.mockProvidersBaseUrl}/shipping/estimate?ship_date=2026-10-15&delivery_days=3`);
+        const res = await this.fetchFn(`${this.mockProvidersBaseUrl}/shipping/estimate?ship_date=2026-10-09&delivery_days=3`);
         if (!res.ok) throw new Error(`HTTP ${res.status} fetching shipping`);
         return res.json();
       })();

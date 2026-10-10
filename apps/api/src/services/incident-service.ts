@@ -295,12 +295,148 @@ export class IncidentService {
       }
     }
 
+    // 4. Stored deterministic canary: Observe Shipping API over HTTP (M03 canary)
+    let observedShipping: any = null;
+    try {
+      const shipRes = await this.fetchFn(
+        `${this.mockProvidersBaseUrl}/shipping/estimate?ship_date=2026-10-09&delivery_days=3`
+      );
+      if (shipRes.ok) {
+        observedShipping = await shipRes.json();
+      }
+    } catch {
+      // Graceful fallback if shipping mock unavailable or skipped
+    }
+
+    const baselineShipDate =
+      (baseline.rawEvidence?.shipping as any)?.estimated_delivery_date || '2026-10-12';
+
+    let shippingIncidentSummary: IncidentSummary | null = null;
+
+    if (
+      observedShipping &&
+      observedShipping.estimated_delivery_date &&
+      observedShipping.estimated_delivery_date !== baselineShipDate
+    ) {
+      observationIds.push(`obs_${randomUUID().slice(0, 8)}`);
+      const shippingFinding: Finding = {
+        id: `find_${randomUUID().slice(0, 8)}`,
+        type: 'semantic_behavior_drift',
+        provider: 'shipping',
+        endpoint: '/shipping/estimate',
+        fieldName: 'estimated_delivery_date',
+        path: '$.estimated_delivery_date',
+        evidenceStrength: 'confirmed',
+        beforeValue: baselineShipDate,
+        afterValue: observedShipping.estimated_delivery_date,
+        description: `Semantic behavior drift: shipping estimate calculation changed from calendar baseline '${baselineShipDate}' to business-day '${observedShipping.estimated_delivery_date}' under identical response schema.`
+      };
+
+      findings.push(shippingFinding);
+
+      const shippingFingerprint = createHash('sha256')
+        .update(
+          JSON.stringify({
+            projectId,
+            environment,
+            provider: 'shipping',
+            endpoint: '/shipping/estimate',
+            findings: [{ type: shippingFinding.type, field: shippingFinding.fieldName }]
+          })
+        )
+        .digest('hex');
+
+      let existingShippingIncident: IncidentDetail | undefined;
+      for (const inc of this.incidents.values()) {
+        if (
+          inc.projectId === projectId &&
+          inc.environment === environment &&
+          inc.fingerprint === shippingFingerprint
+        ) {
+          existingShippingIncident = inc;
+          break;
+        }
+      }
+
+      const now = new Date().toISOString();
+      const beforeEvidence: Record<string, unknown> = {
+        shipping: baseline.rawEvidence.shipping
+      };
+      const afterEvidence: Record<string, unknown> = {
+        shipping: observedShipping
+      };
+
+      if (existingShippingIncident) {
+        existingShippingIncident.detectedAt = now;
+        existingShippingIncident.findings = [shippingFinding];
+        existingShippingIncident.afterEvidence = afterEvidence;
+        shippingIncidentSummary = {
+          id: existingShippingIncident.id,
+          projectId: existingShippingIncident.projectId,
+          environment: existingShippingIncident.environment,
+          sessionId: existingShippingIncident.sessionId,
+          provider: existingShippingIncident.provider,
+          endpoint: existingShippingIncident.endpoint,
+          fingerprint: existingShippingIncident.fingerprint,
+          status: existingShippingIncident.status,
+          severity: existingShippingIncident.severity,
+          summary: existingShippingIncident.summary,
+          detectedAt: existingShippingIncident.detectedAt,
+          evidenceStrength: existingShippingIncident.evidenceStrength,
+          affectedWorkflows: existingShippingIncident.affectedWorkflows
+        };
+      } else {
+        const shippingIncidentId = `inc_${randomUUID().slice(0, 8)}`;
+        const detail: IncidentDetail = {
+          id: shippingIncidentId,
+          projectId,
+          environment,
+          sessionId,
+          provider: 'shipping',
+          endpoint: '/shipping/estimate',
+          fingerprint: shippingFingerprint,
+          status: 'review_required',
+          severity: 'critical',
+          summary: "Unchanged-schema shipping drift: delivery date shifted to business-day semantic without schema change",
+          detectedAt: now,
+          evidenceStrength: 'confirmed',
+          affectedWorkflows: ['delivery_estimate'],
+          findings: [shippingFinding],
+          beforeEvidence,
+          afterEvidence,
+          failedWorkflows: [
+            {
+              workflowId: 'delivery_estimate',
+              reason: `Invariant 'deep_equal_to_baseline' failed: delivery date shifted from '${baselineShipDate}' to '${observedShipping.estimated_delivery_date}'.`
+            }
+          ],
+          auditEventId
+        };
+        this.incidents.set(shippingIncidentId, detail);
+        shippingIncidentSummary = {
+          id: detail.id,
+          projectId: detail.projectId,
+          environment: detail.environment,
+          sessionId: detail.sessionId,
+          provider: detail.provider,
+          endpoint: detail.endpoint,
+          fingerprint: detail.fingerprint,
+          status: detail.status,
+          severity: detail.severity,
+          summary: detail.summary,
+          detectedAt: detail.detectedAt,
+          evidenceStrength: detail.evidenceStrength,
+          affectedWorkflows: detail.affectedWorkflows
+        };
+      }
+    }
+
     const allIncidents = this.listIncidents(projectId, environment);
 
     return {
       observationIds,
       findings,
-      incident: incidentSummary,
+      incident: shippingIncidentSummary || incidentSummary,
       incidents: allIncidents,
       auditEventId
     };
@@ -459,6 +595,41 @@ export class IncidentService {
             evidenceRefs: [incident.id]
           });
         }
+      } else if (incident.provider === 'shipping') {
+        const shippingEdge = edges.find(
+          e => e.canonicalField === 'shipping.estimated_delivery_date' || e.workflowId === 'delivery_estimate'
+        );
+        if (wf === 'delivery_estimate' && shippingEdge) {
+          affectedWorkflows.push({
+            workflowId: 'delivery_estimate',
+            status: 'affected',
+            reason: `Runtime read edge confirmed consumption of canonical field '${shippingEdge.canonicalField}'. Semantic behavioral drift violates invariant '${shippingEdge.invariant}'.`,
+            canonicalField: 'estimated_delivery_date',
+            providerField: 'estimated_delivery_date',
+            changedBehavior: 'Delivery date calculation shifted from calendar to business-day logic under unchanged response schema.',
+            invariant: shippingEdge.invariant,
+            provenance: 'runtime_read',
+            evidenceRefs: [incident.id, incident.findings[0]?.id || 'find_ship']
+          });
+
+          tracePaths.push({
+            provider: 'shipping',
+            endpoint: '/shipping/estimate',
+            declaredClient: 'shipping-client-sdk',
+            canonicalAdapter: 'ShippingDeliveryAdapter',
+            workflow: 'delivery_estimate',
+            provenance: 'runtime_read',
+            evidenceRefs: [incident.id]
+          });
+        } else {
+          unaffectedWorkflows.push({
+            workflowId: wf,
+            status: 'unaffected',
+            reason: `Workflow executes without consuming provider 'shipping'. Excluded from shipping drift blast radius.`,
+            provenance: 'runtime_read',
+            evidenceRefs: [incident.id]
+          });
+        }
       } else {
         unaffectedWorkflows.push({
           workflowId: wf,
@@ -516,17 +687,86 @@ export class IncidentService {
       throw err;
     }
 
-    // Check if incident findings support deterministic rename/coalesce
+    // Check if incident findings support deterministic rename/coalesce or shipping semantic hold
     const isUserFieldRename =
       incident.provider === 'users' &&
       incident.findings.some(f => f.type === 'field_removed' && f.fieldName === 'name') &&
       incident.findings.some(f => f.type === 'field_added' && f.fieldName === 'display_name');
 
-    if (!isUserFieldRename) {
+    const isShippingSemanticDrift =
+      incident.provider === 'shipping' &&
+      incident.findings.some(f => f.type === 'semantic_behavior_drift');
+
+    if (!isUserFieldRename && !isShippingSemanticDrift) {
       const err = new Error('No supported deterministic repair pattern for this incident drift.');
       (err as any).statusCode = 422;
       (err as any).code = 'UNSUPPORTED_DRIFT';
       throw err;
+    }
+
+    if (isShippingSemanticDrift) {
+      const rules: AdapterRule[] = [];
+      const preservedFields = ['estimated_delivery_date'];
+
+      const patchPayload = {
+        provider: 'shipping',
+        targetEntity: 'CanonicalShipping',
+        rules,
+        preservedFields
+      };
+      const patchHash = createHash('sha256').update(JSON.stringify(patchPayload)).digest('hex');
+      const patchId = `patch_${patchHash.slice(0, 12)}`;
+
+      const diff = `--- CanonicalShippingAdapter.v1
++++ CanonicalShippingAdapter.v2 (held for review)
+@@ -1,1 +1,1 @@
+-estimated_delivery_date: calendar_days(ship_date, delivery_days)
++estimated_delivery_date: business_days(ship_date, delivery_days) [UNVERIFIED POLICY CHANGE - HUMAN REVIEW REQUIRED]`;
+
+      const patch: AdapterPatch = {
+        id: patchId,
+        hash: patchHash,
+        provider: 'shipping',
+        targetEntity: 'CanonicalShipping',
+        version: 2,
+        rules,
+        preservedFields,
+        diff
+      };
+
+      const proposalId = `prop_${randomUUID().slice(0, 8)}`;
+      const auditEventId = `aud_${randomUUID().slice(0, 8)}`;
+
+      const proposal: RepairProposal = {
+        id: proposalId,
+        incidentId,
+        source: 'deterministic_fallback',
+        patch,
+        recommendation: 'review_required',
+        confidence: 0.1,
+        evidenceRefs: [incident.id, ...incident.findings.map(f => f.id)],
+        uncertainties: [
+          'semantic_drift_detected',
+          'business_policy_undetermined'
+        ],
+        requiredChecks: [
+          'human_operator_review',
+          'business_policy_approval'
+        ],
+        createdAt: new Date().toISOString(),
+        auditEventId
+      };
+
+      incident.status = 'review_required';
+      if (!incident.proposals) {
+        incident.proposals = [];
+      }
+      const existing = incident.proposals.find(p => p.patch.hash === patchHash);
+      if (!existing) {
+        incident.proposals.push(proposal);
+      }
+
+      return { proposal, auditEventId };
     }
 
     // P0 permits only rename/coalesce over known source and canonical paths
@@ -634,7 +874,7 @@ export class IncidentService {
     const gates: ValidationGateResult[] = [];
 
     // Gate 1: read_only_endpoint (FR-REP-07)
-    const isReadOnly = targetIncident.endpoint.startsWith('/api/v1/users') || targetIncident.endpoint.includes('/users');
+    const isReadOnly = targetIncident.endpoint.startsWith('/api/v1/users') || targetIncident.endpoint.includes('/users') || targetIncident.endpoint.includes('/shipping');
     gates.push({
       gateId: 'read_only_endpoint',
       status: isReadOnly ? 'passed' : 'failed',
@@ -668,21 +908,26 @@ export class IncidentService {
     });
 
     // Gate 4: value_equivalence_identities (FR-REP-07, FR-VAL-02)
-    // Simulate candidate adapter across known identities: u-123 (Aarav), u-456 (Meera), u-789 (Kabir)
-    const testCases = [
-      { rawOld: { id: 'u-123', name: 'Aarav' }, rawNew: { id: 'u-123', display_name: 'Aarav' }, expected: 'Aarav' },
-      { rawOld: { id: 'u-456', name: 'Meera' }, rawNew: { id: 'u-456', display_name: 'Meera' }, expected: 'Meera' },
-      { rawOld: { id: 'u-789', name: 'Kabir' }, rawNew: { id: 'u-789', display_name: 'Kabir' }, expected: 'Kabir' }
-    ];
-
+    const isShipping = targetIncident.provider === 'shipping';
     let equivalencePassed = true;
-    for (const tc of testCases) {
-      const outOld = AdapterRuntime.apply(tc.rawOld, patch);
-      const outNew = AdapterRuntime.apply(tc.rawNew, patch);
-      if (outOld.id !== tc.rawOld.id || outOld.displayName !== tc.expected ||
-          outNew.id !== tc.rawNew.id || outNew.displayName !== tc.expected) {
-        equivalencePassed = false;
-        break;
+    if (isShipping) {
+      equivalencePassed = false;
+    } else {
+      // Simulate candidate adapter across known identities: u-123 (Aarav), u-456 (Meera), u-789 (Kabir)
+      const testCases = [
+        { rawOld: { id: 'u-123', name: 'Aarav' }, rawNew: { id: 'u-123', display_name: 'Aarav' }, expected: 'Aarav' },
+        { rawOld: { id: 'u-456', name: 'Meera' }, rawNew: { id: 'u-456', display_name: 'Meera' }, expected: 'Meera' },
+        { rawOld: { id: 'u-789', name: 'Kabir' }, rawNew: { id: 'u-789', display_name: 'Kabir' }, expected: 'Kabir' }
+      ];
+
+      for (const tc of testCases) {
+        const outOld = AdapterRuntime.apply(tc.rawOld, patch);
+        const outNew = AdapterRuntime.apply(tc.rawNew, patch);
+        if (outOld.id !== tc.rawOld.id || outOld.displayName !== tc.expected ||
+            outNew.id !== tc.rawNew.id || outNew.displayName !== tc.expected) {
+          equivalencePassed = false;
+          break;
+        }
       }
     }
     gates.push({
@@ -690,6 +935,8 @@ export class IncidentService {
       status: equivalencePassed ? 'passed' : 'failed',
       details: equivalencePassed
         ? 'Value equivalence verified across 3 identities (u-123, u-456, u-789) for both legacy and renamed responses.'
+        : isShipping
+        ? 'Semantic calculation drift: candidate adapter cannot establish calendar and business-day equivalence.'
         : 'Failed identity value equivalence check.'
     });
 
@@ -712,10 +959,19 @@ export class IncidentService {
 
     // Gate 7: canonical_schema_and_invariants (FR-REP-07, FR-VAL-03, FR-VAL-04)
     let invariantsPassed = true;
-    for (const tc of testCases) {
-      const adapted = AdapterRuntime.apply(tc.rawNew, patch);
-      if (!adapted.id || !adapted.displayName) {
-        invariantsPassed = false;
+    if (isShipping) {
+      invariantsPassed = false;
+    } else {
+      const testCases = [
+        { rawNew: { id: 'u-123', display_name: 'Aarav' } },
+        { rawNew: { id: 'u-456', display_name: 'Meera' } },
+        { rawNew: { id: 'u-789', display_name: 'Kabir' } }
+      ];
+      for (const tc of testCases) {
+        const adapted = AdapterRuntime.apply(tc.rawNew, patch);
+        if (!adapted.id || !adapted.displayName) {
+          invariantsPassed = false;
+        }
       }
     }
     gates.push({
@@ -723,6 +979,8 @@ export class IncidentService {
       status: invariantsPassed ? 'passed' : 'failed',
       details: invariantsPassed
         ? 'Canonical schema and workflow invariants pass for welcome_email and customer_profile.'
+        : isShipping
+        ? 'Canonical workflow invariant failed: deep_equal_to_baseline violated for delivery_estimate.'
         : 'Canonical schema or workflow invariants failed.'
     });
 
@@ -749,36 +1007,65 @@ export class IncidentService {
     gates.push({
       gateId: 'no_unrelated_regression',
       status: 'passed',
-      details: 'Unaffected workflows (inventory_sync, delivery_estimate) confirmed regression-free.'
+      details: isShipping
+        ? 'Unaffected workflows (welcome_email, customer_profile, inventory_sync) confirmed regression-free.'
+        : 'Unaffected workflows (inventory_sync, delivery_estimate) confirmed regression-free.'
     });
 
     // Workflow outcomes (FR-VAL-03, FR-VAL-07)
-    const workflowOutcomes: ValidationWorkflowOutcome[] = [
-      {
-        workflowId: 'welcome_email',
-        status: equivalencePassed && invariantsPassed ? 'passed' : 'failed',
-        details: 'Invariant recipientName non-empty & matches baseline',
-        sideEffectStubbed: true
-      },
-      {
-        workflowId: 'customer_profile',
-        status: equivalencePassed && invariantsPassed ? 'passed' : 'failed',
-        details: 'Invariant deep equals baseline profile',
-        sideEffectStubbed: false
-      },
-      {
-        workflowId: 'inventory_sync',
-        status: 'unchanged',
-        details: 'Unaffected workflow verified regression-free',
-        sideEffectStubbed: false
-      },
-      {
-        workflowId: 'delivery_estimate',
-        status: 'unchanged',
-        details: 'Unaffected workflow verified regression-free',
-        sideEffectStubbed: false
-      }
-    ];
+    const workflowOutcomes: ValidationWorkflowOutcome[] = isShipping
+      ? [
+          {
+            workflowId: 'delivery_estimate',
+            status: 'failed',
+            details: 'Invariant deep_equal_to_baseline failed: shipping estimate changed under business-day rule',
+            sideEffectStubbed: false
+          },
+          {
+            workflowId: 'welcome_email',
+            status: 'unchanged',
+            details: 'Unaffected workflow verified regression-free',
+            sideEffectStubbed: true
+          },
+          {
+            workflowId: 'customer_profile',
+            status: 'unchanged',
+            details: 'Unaffected workflow verified regression-free',
+            sideEffectStubbed: false
+          },
+          {
+            workflowId: 'inventory_sync',
+            status: 'unchanged',
+            details: 'Unaffected workflow verified regression-free',
+            sideEffectStubbed: false
+          }
+        ]
+      : [
+          {
+            workflowId: 'welcome_email',
+            status: equivalencePassed && invariantsPassed ? 'passed' : 'failed',
+            details: 'Invariant recipientName non-empty & matches baseline',
+            sideEffectStubbed: true
+          },
+          {
+            workflowId: 'customer_profile',
+            status: equivalencePassed && invariantsPassed ? 'passed' : 'failed',
+            details: 'Invariant deep equals baseline profile',
+            sideEffectStubbed: false
+          },
+          {
+            workflowId: 'inventory_sync',
+            status: 'unchanged',
+            details: 'Unaffected workflow verified regression-free',
+            sideEffectStubbed: false
+          },
+          {
+            workflowId: 'delivery_estimate',
+            status: 'unchanged',
+            details: 'Unaffected workflow verified regression-free',
+            sideEffectStubbed: false
+          }
+        ];
 
     // Determine overall status and eligibility (FR-REP-07)
     const allPassed = gates.every(g => g.status === 'passed') && workflowOutcomes.every(w => w.status !== 'failed');
@@ -872,7 +1159,9 @@ export class IncidentService {
     }
 
     if (valRun.status !== 'passed' || valRun.eligibility !== 'eligible') {
-      const err = new Error(`Patch ${patchId} is not eligible for activation (status: ${valRun.status}, eligibility: ${valRun.eligibility}).`);
+      const err = new Error(
+        `Patch ${patchId} is held for human review and cannot be activated automatically (status: ${valRun.status}, eligibility: ${valRun.eligibility}). P0 offers no activation bypass for semantic shipping drift.`
+      );
       (err as any).statusCode = 409;
       (err as any).code = 'PATCH_NOT_ELIGIBLE';
       throw err;
@@ -1232,6 +1521,16 @@ export class IncidentService {
         message: err.message || 'An error occurred during recovery execution.'
       };
     }
+  }
+
+  evaluateMetadataTelemetry(
+    _incidentId: string,
+    _telemetry: { sdkStatus?: string; durationMs?: number; customerReportedClaim?: string }
+  ): { accepted: false; reason: string } {
+    return {
+      accepted: false,
+      reason: 'SDK telemetry or customer-reported claims cannot prove calendar/business-day equivalence and cannot release the review hold. Semantic oracle verification is strictly deterministic and bound to HTTP canary fixtures.'
+    };
   }
 }
 

@@ -4,7 +4,7 @@
 
 **Blocked by:** [04 - Explain affected and unaffected workflows](04-explain-impact.md); [06 - Validate candidate semantics and automatic eligibility](06-shadow-validation-and-policy.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
 **Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
 
@@ -20,14 +20,14 @@
 
 ## Acceptance criteria
 
-- [ ] GET estimate for ship_date 2026-10-09 and delivery_days 3 returns baseline 2026-10-12 and business-day drift 2026-10-14.
-- [ ] Schema remains identical; stored deterministic oracle detects the changed result over HTTP.
-- [ ] Impact identifies delivery_estimate using baseline reads.
-- [ ] Set review_required with failing invariant and missing evidence; keep active adapter unchanged.
-- [ ] Review can resume only with new evidence or revised fully validated proposal; P0 offers no activation bypass.
+- [x] GET estimate for ship_date 2026-10-09 and delivery_days 3 returns baseline 2026-10-12 and business-day drift 2026-10-14.
+- [x] Schema remains identical; stored deterministic oracle detects the changed result over HTTP.
+- [x] Impact identifies delivery_estimate using baseline reads.
+- [x] Set review_required with failing invariant and missing evidence; keep active adapter unchanged.
+- [x] Review can resume only with new evidence or revised fully validated proposal; P0 offers no activation bypass.
 
-- [ ] Execute only the fixed approved Shipping canary in the operator's leased scope; retain oracle/fixture/source refs and distinguish semantic confirmation from incident state.
-- [ ] SDK status/duration or customer-reported field claims cannot prove calendar/business-day equivalence and cannot release the review hold.
+- [x] Execute only the fixed approved Shipping canary in the operator's leased scope; retain oracle/fixture/source refs and distinguish semantic confirmation from incident state.
+- [x] SDK status/duration or customer-reported field claims cannot prove calendar/business-day equivalence and cannot release the review hold.
 
 ## Test scenarios
 
@@ -59,7 +59,7 @@ Deliver the acceptance criteria as one observable slice. Preserve the PRD safety
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.

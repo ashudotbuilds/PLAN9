@@ -587,3 +587,51 @@ Never include credentials or rewrite another contributor's history.
 - **Team Frontier Status:**
   - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09.
   - Next in line in topological order: **Ticket 10** (`soumya240806`: "[P0] 10: Refuse illegal shipping patch via semantic canary and trigger rollback") and **Ticket 29** (`saransh-sh`: "[P0] 29: Issue, rotate, and revoke environment-scoped ingestion keys").
+
+---
+
+## Entry: 2026-10-11 - Ticket 10: Detect unchanged-schema shipping drift and hold repair (codex/issue-10-shipping-semantic-refusal)
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#10](https://github.com/ashudotbuilds/PLAN9/issues/10)
+- **Branch:** `codex/issue-10-shipping-semantic-refusal`
+- **Status:** COMPLETED, VERIFIED, AND INTEGRATED into main in single commit per user instruction; Issue #10 closed.
+- **Scope:** PRD FR-OBS-04, FR-DET-04, FR-SIM-03, FR-REP-05, FR-REP-08, FR-MON-01, NFR-20. Sections 13.2–13.3, 19, 21.1 (AT-SDK-13).
+- **Implementation summary:**
+  1. **Deterministic Oracle Canary for Shipping (M03):**
+     - Stored canary query `GET /shipping/estimate?ship_date=2026-10-09&delivery_days=3` returns calendar baseline `2026-10-12` and business-days drift `2026-10-14` (skipping Saturday Oct 10 and Sunday Oct 11).
+     - Response schema shape remains identical (`{ estimated_delivery_date: string }`).
+     - Stored deterministic canary oracle flags semantic behavioral change over HTTP, recording finding with `type: 'semantic_behavior_drift'`, `evidenceStrength: 'confirmed'`, `beforeValue: '2026-10-12'`, `afterValue: '2026-10-14'`.
+  2. **Impact Analysis & Blast Radius Containment (A09):**
+     - Lineage correctly marks `delivery_estimate` as `affected` due to consumption of `shipping.estimated_delivery_date` and violation of invariant `deep_equal_to_baseline`.
+     - User workflows (`welcome_email`, `customer_profile`) and inventory workflow (`inventory_sync`) are strictly excluded from the blast radius and marked `unaffected`.
+  3. **Repair Proposal Review Hold (A10):**
+     - When incident is shipping semantic drift, repair synthesis produces proposal with `recommendation: 'review_required'`, `confidence: 0.1`, and explicit uncertainties `['semantic_drift_detected', 'business_policy_undetermined']`.
+     - Incident status is set to `review_required`.
+  4. **9 Conjunctive Shadow Validation Gates (A11):**
+     - Evaluates 9 gates in shadow isolation: Gate 1 (`read_only_endpoint`) passes; Gate 2 (`structural_drift_only`) fails; Gate 4 (`value_equivalence_identities`) fails; Gate 5 (`no_proposal_uncertainty`) fails; Gate 7 (`canonical_schema_and_invariants`) fails; Gate 9 (`no_unrelated_regression`) passes.
+     - Validation run evaluates to `status: 'failed'` and `eligibility: 'review_required'`.
+  5. **Activation Bypass Refusal (A12, A16):**
+     - Direct activation attempt returns 409 `PATCH_NOT_ELIGIBLE` ("Patch is held for human review and cannot be activated automatically; P0 offers no activation bypass for semantic shipping drift").
+     - Automated recovery run halts at `validating` stage and transitions to `failed` with code `VALIDATION_FAILED`.
+     - Active adapter remains completely unchanged throughout.
+  6. **Lease Isolation & Metadata Rejection:**
+     - Concurrent access by another project scope throws 409 `DEMO_SCOPE_BUSY`.
+     - Metadata-only SDK events or customer claims cannot satisfy the deterministic oracle or release the review hold.
+  7. **Operator Dashboard Controls:**
+     - Added "Inject Shipping Business Days (`shipping.business-days`)" control in scenario injection panel alongside user rename injection.
+  8. **Single-Commit Verification:**
+     - 78 vitest tests passing across workspace (`vitest run`).
+     - Workspace cleanly built (`pnpm -r run build`).
+     - Planning verification script passed (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `apps/api/src/services/baseline-service.ts`
+  - `apps/api/src/services/incident-service.ts`
+  - `apps/api/tests/api.test.ts`
+  - `apps/web/src/App.tsx`
+  - `.scratch/driftguard/issues/10-shipping-semantic-refusal.md`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10.
+  - Next in line in topological order: **Ticket 29** (`saransh-sh`: "[P0] 29: Issue, rotate, and revoke environment-scoped ingestion keys").

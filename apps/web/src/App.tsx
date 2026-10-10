@@ -1136,6 +1136,18 @@ export function App() {
               </button>
 
               <button
+                onClick={() => handleInjectScenario('shipping.business-days')}
+                disabled={!baseline || injectingScenario}
+                className="px-3.5 py-1.5 bg-[#d29922]/20 hover:bg-[#d29922]/30 text-[#e3b341] border border-[#d29922]/40 disabled:opacity-50 rounded text-xs font-medium transition cursor-pointer"
+              >
+                {injectingScenario
+                  ? 'Injecting...'
+                  : activeScenarios.includes('shipping.business-days')
+                  ? 'Injected: shipping.business-days'
+                  : 'Inject Shipping Business Days'}
+              </button>
+
+              <button
                 onClick={handleRunObservations}
                 disabled={!baseline || observing}
                 className="px-4 py-1.5 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white rounded text-xs font-medium transition cursor-pointer shadow-sm"

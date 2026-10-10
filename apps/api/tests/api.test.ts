@@ -1672,6 +1672,281 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(res.json().error.code).toBe('BASELINE_REQUIRED');
     });
   });
+
+  describe('Ticket 10: Unchanged-Schema Shipping Drift & Repair Review Hold (FR-OBS-04, FR-DET-04, FR-SIM-03, FR-REP-05, FR-REP-08)', () => {
+    async function setupShippingDriftApp() {
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+
+      let shippingBusinessDays = false;
+      const mockFetch = vi.fn(async (url: string | URL | Request) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/scenarios/shipping.business-days/inject')) {
+          shippingBusinessDays = true;
+          return { ok: true, json: async () => ({ ok: true, activeScenarios: ['shipping.business-days'] }) };
+        }
+        if (urlStr.includes('/shipping/estimate')) {
+          // Exact literal dates: baseline 2026-10-12, business-days drift 2026-10-14
+          return {
+            ok: true,
+            json: async () => ({
+              estimated_delivery_date: shippingBusinessDays ? '2026-10-14' : '2026-10-12'
+            })
+          };
+        }
+        if (urlStr.includes('/users/')) {
+          const id = urlStr.split('/users/')[1]?.split('?')[0] || 'u-123';
+          const nameMap: Record<string, string> = { 'u-123': 'Aarav', 'u-456': 'Meera', 'u-789': 'Kabir' };
+          return { ok: true, json: async () => ({ id, name: nameMap[id] || 'Aarav' }) };
+        }
+        if (urlStr.includes('/inventory/items')) {
+          return { ok: true, json: async () => ({ items: [{ sku: 'WIDGET-A', quantity: 15 }], total: 1 }) };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      await baselineService.captureBaseline('prj_demo_default', 'development', 'sess_1');
+
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      return { testApp, baselineService, incidentService, mockFetch };
+    }
+
+    it('exact literal baseline and drift dates via mock providers boundary (M03)', async () => {
+      const { buildMockProvidersApp } = await import('../../mock-providers/src/app.js');
+      const mockApp = buildMockProvidersApp();
+
+      // Baseline query: ship_date 2026-10-09, delivery_days 3 -> 2026-10-12
+      const baselineRes = await mockApp.inject({
+        method: 'GET',
+        url: '/shipping/estimate?ship_date=2026-10-09&delivery_days=3'
+      });
+      expect(baselineRes.statusCode).toBe(200);
+      expect(baselineRes.json()).toEqual({ estimated_delivery_date: '2026-10-12' });
+
+      // Inject scenario: shipping.business-days
+      const injectRes = await mockApp.inject({
+        method: 'POST',
+        url: '/scenarios/shipping.business-days/inject'
+      });
+      expect(injectRes.statusCode).toBe(200);
+
+      // Drift query: ship_date 2026-10-09, delivery_days 3 -> 2026-10-14 (skips Sat Oct 10 & Sun Oct 11)
+      const driftRes = await mockApp.inject({
+        method: 'GET',
+        url: '/shipping/estimate?ship_date=2026-10-09&delivery_days=3'
+      });
+      expect(driftRes.statusCode).toBe(200);
+      expect(driftRes.json()).toEqual({ estimated_delivery_date: '2026-10-14' });
+    });
+
+    it('detects shipping semantic behavioral drift under unchanged response schema shape (A06)', async () => {
+      const { testApp } = await setupShippingDriftApp();
+
+      // Inject shipping business days scenario
+      const injectRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/scenarios/shipping.business-days/inject',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_1' }
+      });
+      expect(injectRes.statusCode).toBe(200);
+
+      // Run observations
+      const obsRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/observations/run',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_1' }
+      });
+      expect(obsRes.statusCode).toBe(200);
+      const obsBody = obsRes.json();
+
+      expect(obsBody.findings.length).toBe(1);
+      const finding = obsBody.findings[0];
+      expect(finding.type).toBe('semantic_behavior_drift');
+      expect(finding.provider).toBe('shipping');
+      expect(finding.endpoint).toBe('/shipping/estimate');
+      expect(finding.fieldName).toBe('estimated_delivery_date');
+      expect(finding.beforeValue).toBe('2026-10-12');
+      expect(finding.afterValue).toBe('2026-10-14');
+      expect(finding.evidenceStrength).toBe('confirmed');
+
+      expect(obsBody.incident).toBeDefined();
+      expect(obsBody.incident.provider).toBe('shipping');
+      expect(obsBody.incident.status).toBe('review_required');
+      expect(obsBody.incident.affectedWorkflows).toEqual(['delivery_estimate']);
+    });
+
+    it('shipping impact analysis affects delivery_estimate and excludes user workflows (A09)', async () => {
+      const { testApp, incidentService } = await setupShippingDriftApp();
+
+      await incidentService.injectScenario('shipping.business-days', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const impactRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/analyze-impact`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_1' }
+      });
+      expect(impactRes.statusCode).toBe(200);
+      const impact = impactRes.json();
+
+      const affectedIds = impact.affectedWorkflows.map((w: any) => w.workflowId);
+      expect(affectedIds).toEqual(['delivery_estimate']);
+
+      const unaffectedIds = impact.unaffectedWorkflows.map((w: any) => w.workflowId);
+      expect(unaffectedIds).toContain('welcome_email');
+      expect(unaffectedIds).toContain('customer_profile');
+      expect(unaffectedIds).toContain('inventory_sync');
+      expect(unaffectedIds).not.toContain('delivery_estimate');
+    });
+
+    it('proposes repair with review_required recommendation and holds activation (A10, A11, A12)', async () => {
+      const { testApp, incidentService } = await setupShippingDriftApp();
+
+      await incidentService.injectScenario('shipping.business-days', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      // Propose repair (A10)
+      const propRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/propose-repair`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { model: 'deterministic_fallback' }
+      });
+      expect(propRes.statusCode).toBe(200);
+      const proposal = propRes.json().proposal;
+      expect(proposal.recommendation).toBe('review_required');
+      expect(proposal.confidence).toBeLessThanOrEqual(0.5);
+      expect(proposal.uncertainties).toContain('semantic_drift_detected');
+      expect(proposal.uncertainties).toContain('business_policy_undetermined');
+
+      const patchId = proposal.patch.id;
+
+      // Validate patch (A11) - 9 conjunctive safety gates
+      const valRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${patchId}/validate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'prj_demo_default',
+          environment: 'development',
+          candidatePatchHash: proposal.patch.hash
+        }
+      });
+      expect(valRes.statusCode).toBe(200);
+      const validationRun = valRes.json().validationRun;
+      expect(validationRun.status).toBe('failed');
+      expect(validationRun.eligibility).toBe('review_required');
+
+      // Check failing gates: structural_drift_only, value_equivalence, uncertainty, canonical_invariants
+      const gates = validationRun.gates;
+      expect(gates.find((g: any) => g.gateId === 'read_only_endpoint').status).toBe('passed');
+      expect(gates.find((g: any) => g.gateId === 'structural_drift_only').status).toBe('failed');
+      expect(gates.find((g: any) => g.gateId === 'value_equivalence_identities').status).toBe('failed');
+      expect(gates.find((g: any) => g.gateId === 'no_proposal_uncertainty').status).toBe('failed');
+      expect(gates.find((g: any) => g.gateId === 'canonical_schema_and_invariants').status).toBe('failed');
+      expect(gates.find((g: any) => g.gateId === 'no_unrelated_regression').status).toBe('passed');
+
+      // Activation attempt directly fails with 409 PATCH_NOT_ELIGIBLE (A12)
+      const actRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${patchId}/activate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'prj_demo_default',
+          environment: 'development',
+          candidatePatchHash: proposal.patch.hash
+        }
+      });
+      expect(actRes.statusCode).toBe(409);
+      expect(actRes.json().error.code).toBe('PATCH_NOT_ELIGIBLE');
+
+      // Active adapter remains untouched (null/undefined)
+      expect(incidentService.getActiveAdapter('prj_demo_default', 'development')).toBeUndefined();
+    });
+
+    it('recovery run halts with failed status when patch validation is held for review (A16, A17)', async () => {
+      const { testApp, incidentService } = await setupShippingDriftApp();
+
+      await incidentService.injectScenario('shipping.business-days', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      // Start recovery run
+      const recRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/recover`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+      expect(recRes.statusCode).toBe(202);
+      const recoveryRunId = recRes.json().recoveryRunId;
+
+      // Poll until finished
+      let run: any = null;
+      for (let i = 0; i < 20; i++) {
+        const pollRes = await testApp.inject({
+          method: 'GET',
+          url: `/api/recovery-runs/${recoveryRunId}`,
+          headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+        });
+        run = pollRes.json().recoveryRun;
+        if (run.status === 'succeeded' || run.status === 'failed') break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+
+      expect(run.status).toBe('failed');
+      expect(run.stage).toBe('failed');
+      expect(run.error.code).toBe('VALIDATION_FAILED');
+      expect(run.error.message).toContain('review_required');
+
+      // Active adapter remains untouched
+      expect(incidentService.getActiveAdapter('prj_demo_default', 'development')).toBeUndefined();
+    });
+
+    it('returns 409 DEMO_SCOPE_BUSY when another scope attempts action under active lease', async () => {
+      const { testApp } = await setupShippingDriftApp();
+
+      // prj_demo_default/development holds lease. Call from another project scope:
+      const busyRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/observations/run',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_other_tenant', environment: 'development', sessionId: 'sess_2_intruder' }
+      });
+
+      expect(busyRes.statusCode).toBe(409);
+      expect(busyRes.json().error.code).toBe('DEMO_SCOPE_BUSY');
+    });
+
+    it('metadata-only SDK event cannot satisfy Shipping semantic oracle or release review hold', async () => {
+      const { incidentService } = await setupShippingDriftApp();
+
+      await incidentService.injectScenario('shipping.business-days', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const evalRes = incidentService.evaluateMetadataTelemetry(incidentId, {
+        sdkStatus: 'ok',
+        durationMs: 45,
+        customerReportedClaim: 'calendar-and-business-days-are-equivalent'
+      });
+
+      expect(evalRes.accepted).toBe(false);
+      expect(evalRes.reason).toContain('cannot prove calendar/business-day equivalence');
+
+      // Incident status remains review_required
+      const incident = incidentService.getIncident(incidentId, 'prj_demo_default', 'development');
+      expect(incident?.status).toBe('review_required');
+    });
+  });
 });
 
 
