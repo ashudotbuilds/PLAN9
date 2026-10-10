@@ -245,6 +245,25 @@ Never include credentials or rewrite another contributor's history.
 - **Branch:** `codex/issue-03-inject-and-detect-user-drift`.
 - **Feature commit:** `bd5e035`.
 - **Confirmed push:** Confirmed push to `origin/codex/issue-03-inject-and-detect-user-drift`.
+- **Log commit identifier:** `docs: record issue 03 completion in dev log`.
+- **Log publication:** Confirmed pushed at `42ef978`.
+
+## 2026-10-11 — Main integration: Issue #3 closure and frontier advancement
+
+- **Task:** User authorized fast-forward integration of completed Issue #3 into `main`, closure of GitHub Issue #3, and team frontier update.
+- **Authenticated identity:** ashudotbuilds via GitHub API and Git credentials.
+- **Status:** PUSHED to origin/main; Issue #3 closed on GitHub.
+- **Scope:** Default-branch publication of Ticket 03 implementation and dev log.
+- **Integration:** Fast-forward merged `codex/issue-03-inject-and-detect-user-drift` (commits `bd5e035` and `42ef978`) into `main`. Pushed to `origin/main`. Closed GitHub Issue #3 (state: `closed`, reason: `completed`).
+- **Team Frontier Status:**
+  - Ticket 01 is COMPLETED and closed.
+  - Ticket 28 is COMPLETED and closed.
+  - Ticket 02 is COMPLETED and closed.
+  - Ticket 03 is COMPLETED and closed.
+  - Ticket 04 (`saransh-sh`: "Explain impact and recommend repair") is now UNBLOCKED and ready to start!
+  - Ticket 29 (`saransh-sh`: "Issue rotate and revoke environment-scoped ingestion keys") is also UNBLOCKED.
+- **Log commit identifier:** `docs: record issue 03 main integration and closure in dev log`.
+- **Log publication:** Confirmed pushed at `main`.
 
 
 
