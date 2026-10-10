@@ -831,4 +831,52 @@ Never include credentials or rewrite another contributor's history.
   - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11.
   - Next in line in topological order: **Ticket 32** (`chandrabhan-kushwaha`: "[P0] 32: Connect the Node SDK and sample through real metadata ingestion").
 
+---
+
+## Entry: 2026-10-11 - Ticket 32: Connect the Node SDK and sample through real metadata ingestion
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#32](https://github.com/ashudotbuilds/PLAN9/issues/32)
+- **Code Commit:** `374a744`
+- **Status:** COMPLETED, VERIFIED, AND INTEGRATED into main; Issue #32 closed.
+- **Scope:** PRD FR-SDK-01, FR-SDK-02, FR-INV-01, FR-INV-02, NFR-19, NFR-21. Sections 12.5 and 18; AT-SDK-04, AT-SDK-06, AT-SDK-08, AT-SDK-17.
+- **Implementation summary:**
+  1. **Node-Only SDK Package (`@driftguard/sdk`):**
+     - Initialized with strict local config validation (never throws into host; disables collection and records diagnostic error on invalid/empty keys, project IDs, or non-loopback HTTP endpoints).
+     - Explicit dependency registration `driftguard.registerDependency(...)` with 2-second timeout and Bearer auth against `POST /api/dependencies/register` (A27).
+     - Synchronous `driftguard.trackRequest(...)` with strict bounds (100 events, 512 KiB max queue, dropping newest on overflow), method/route validation, and local credential redaction (`authorization`, `token`, `secret`, `password`, `apiKey`).
+     - Default metadata-only collection mode; reviewed fixtures mode supported when explicitly opted-in.
+     - Single in-flight asynchronous `driftguard.flush()` batch drain (up to 20 events per batch) against `POST /api/ingest/observations` (A28) with transient retries (429/5xx), backoff, 7-second flush deadline, and permanent 401/403 disablement.
+     - `driftguard.diagnostics()` providing local telemetry counters, active session, and last acknowledged ingest.
+     - Bounded `driftguard.shutdown()` with interval timer disposal and final bounded drain.
+  2. **Sample Consumer Application (`@driftguard/sample-consumer`):**
+     - Real Node CLI and programmatic runner (`runSampleConsumer`).
+     - Issues real HTTP requests against the mock Users API for all 3 fixture identities (`u-123`, `u-456`, `u-789`), measuring actual duration and status codes.
+     - Enforces complete host failure isolation: provider requests succeed even if DriftGuard registration or control plane is completely down.
+     - Accompanied by documentation in `apps/sample-consumer/README.md`.
+  3. **Verification & Suite Coverage:**
+     - 111 vitest tests passing across all 6 workspace packages/apps (`pnpm test`).
+     - Full monorepo typecheck passing with 0 errors (`pnpm -r run typecheck`).
+     - Monorepo production build clean (`pnpm -r run build`).
+     - Planning integrity validated (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `packages/sdk/package.json`
+  - `packages/sdk/tsconfig.json`
+  - `packages/sdk/src/index.ts`
+  - `packages/sdk/src/redactor.ts`
+  - `packages/sdk/tests/sdk.test.ts`
+  - `apps/sample-consumer/package.json`
+  - `apps/sample-consumer/tsconfig.json`
+  - `apps/sample-consumer/src/index.ts`
+  - `apps/sample-consumer/README.md`
+  - `apps/sample-consumer/tests/sample-consumer.test.ts`
+  - `.scratch/driftguard/issues/32-node-sdk-sample.md`
+  - `pnpm-lock.yaml`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32.
+  - Next in line in topological order: **Ticket 33** (`chandrabhan-kushwaha`: "[P0] 33: Bound and isolate SDK delivery and diagnostics").
+
+
 
