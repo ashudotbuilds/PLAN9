@@ -33,6 +33,7 @@ import { ObservationIngestionService } from './services/observation-ingestion-se
 export interface ApiAppOptions {
   operatorToken?: string;
   mockProvidersBaseUrl?: string;
+  fetchFn?: typeof fetch;
   baselineService?: BaselineService;
   incidentService?: IncidentService;
   projectService?: ProjectService;
@@ -55,10 +56,16 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
   }
   const baselineService =
     options.baselineService ||
-    new BaselineService({ mockProvidersBaseUrl: options.mockProvidersBaseUrl });
+    new BaselineService({
+      mockProvidersBaseUrl: options.mockProvidersBaseUrl,
+      fetchFn: options.fetchFn
+    });
   const incidentService =
     options.incidentService ||
-    new IncidentService(baselineService, { mockProvidersBaseUrl: options.mockProvidersBaseUrl });
+    new IncidentService(baselineService, {
+      mockProvidersBaseUrl: options.mockProvidersBaseUrl,
+      fetchFn: options.fetchFn
+    });
   const inventoryService = options.inventoryService || new InventoryService();
   const observationIngestionService =
     options.observationIngestionService ||
@@ -785,6 +792,38 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
 
   // A27: Ingest Dependency Registration
   app.post('/api/ingest/dependencies', { preHandler: [requireIngestionAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const parsed = RegisterDependencyRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Invalid dependency registration payload.',
+          details: parsed.error.format(),
+          correlationId
+        }
+      });
+    }
+
+    try {
+      const activeSessionId = 'sess-demo-local-01';
+      const result = inventoryService.registerDependency(parsed.data, activeSessionId);
+      return reply.status(200).send(result);
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500;
+      return reply.status(statusCode).send({
+        error: {
+          code: err.code || 'INTERNAL_ERROR',
+          message: err.message,
+          details: {},
+          correlationId
+        }
+      });
+    }
+  });
+
+  // Alias for SDK backwards compatibility
+  app.post('/api/dependencies/register', { preHandler: [requireIngestionAuth] }, async (request, reply) => {
     const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
     const parsed = RegisterDependencyRequestSchema.safeParse(request.body);
     if (!parsed.success) {

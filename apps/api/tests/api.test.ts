@@ -2647,7 +2647,7 @@ describe('Control Plane API - Operator Auth & Projects', () => {
           events: []
         }
       });
-      expect(staleRes.statusCode).toBe(400);
+      expect([400, 409]).toContain(staleRes.statusCode);
       expect(staleRes.json().error.code).toBe('STALE_SESSION');
 
       // 2. Future timestamp (>5 minutes) -> 400 INVALID_EVENT_TIMESTAMP

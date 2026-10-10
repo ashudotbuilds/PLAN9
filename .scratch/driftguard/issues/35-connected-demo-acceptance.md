@@ -4,7 +4,7 @@
 
 **Blocked by:** Ticket 10, Ticket 11, Ticket 12, Ticket 33, Ticket 34.
 
-**Status:** ready-for-agent (authoring status; verify blockers before execution)
+**Status:** completed
 
 **Priority:** P0
 
@@ -18,10 +18,10 @@
 
 ## Acceptance criteria
 
-- [ ] Execute and retain real results for AT-SDK-01 through AT-SDK-17, including key/scope negative tests, default/local redaction, actual sample and diagnostics.
-- [ ] Run exact original primary acceptance, invalid/modified patch, no-review-bypass, deterministic fallback, unchanged-shape Shipping hold and replay-failure rollback.
-- [ ] Prove reset/session fencing, concurrent ingestion atomicity, pinned mock scope, host outage isolation and independent baseline/latest evidence.
-- [ ] Document full SDK quickstart, safe disposable demo keys, measured rehearsal evidence and limitations; do not fabricate missing passes. Ticket13 owns final combined release/rehearsal.
+- [x] Execute and retain real results for AT-SDK-01 through AT-SDK-17, including key/scope negative tests, default/local redaction, actual sample and diagnostics.
+- [x] Run exact original primary acceptance, invalid/modified patch, no-review-bypass, deterministic fallback, unchanged-shape Shipping hold and replay-failure rollback.
+- [x] Prove reset/session fencing, concurrent ingestion atomicity, pinned mock scope, host outage isolation and independent baseline/latest evidence.
+- [x] Document full SDK quickstart, safe disposable demo keys, measured rehearsal evidence and limitations; do not fabricate missing passes. Ticket13 owns final combined release/rehearsal.
 
 ## Test scenarios
 
@@ -57,8 +57,8 @@ One ticket per implementation run; no universal discovery/interception, producti
 
 ## Completion evidence
 
-- [ ] Retain observable backend/test results, scope, provenance, and requirement IDs.
-- [ ] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
-- [ ] Preserve other owners' changes and explicitly review staged paths.
-- [ ] After authorized feature push, append and separately push its log entry.
-- [ ] Mark complete only when acceptance criteria and verified blockers pass.
+- [x] Retain observable backend/test results, scope, provenance, and requirement IDs.
+- [x] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
+- [x] Preserve other owners' changes and explicitly review staged paths.
+- [x] After authorized feature push, append and separately push its log entry.
+- [x] Mark complete only when acceptance criteria and verified blockers pass.

@@ -115,7 +115,7 @@ export class ObservationIngestionService {
         const error: any = new Error(
           `Stale or invalid session: provided '${batch.sessionId}', active is '${activeSessionId}'.`
         );
-        error.statusCode = 400;
+        error.statusCode = 409;
         error.code = 'STALE_SESSION';
         throw error;
       }

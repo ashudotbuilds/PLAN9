@@ -193,7 +193,7 @@ export class DriftGuard {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-      const res = await this.fetchFn(`${this.config.endpoint}/api/dependencies/register`, {
+      const res = await this.fetchFn(`${this.config.endpoint}/api/ingest/dependencies`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -11,7 +11,7 @@ describe('Sample Consumer Integration & Failure Isolation', () => {
 
     const mockFetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
       // 1. DriftGuard registration
-      if (url.includes('/api/dependencies/register')) {
+      if (url.includes('/api/dependencies/register') || url.includes('/api/ingest/dependencies')) {
         return {
           ok: true,
           status: 200,
