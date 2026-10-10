@@ -471,3 +471,52 @@ Never include credentials or rewrite another contributor's history.
   - Ticket 29 (`saransh-sh`: "[P0] 29: Issue, rotate, and revoke environment-scoped ingestion keys") is also UNBLOCKED.
 - **Log commit identifier:** `docs: record issue 07 main integration and closure in dev log`.
 - **Log publication:** Confirmed pushed at `main`.
+
+---
+
+## Entry: 2026-10-11 - Ticket 08: Run and Record Backend Recovery Workflow (codex/issue-08-backend-recovery-run)
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#8](https://github.com/ashudotbuilds/PLAN9/issues/8)
+- **Branch:** `codex/issue-08-backend-recovery-run`
+- **Status:** IMPLEMENTED AND VERIFIED on feature branch; ready for merge to main.
+- **Scope:** PRD FR-REC-01, FR-REC-02, FR-REC-03, FR-REC-04, FR-VAL-09, NFR-17, NFR-20; Sections 13, 13.1–13.2, 16; Endpoints `A16` (`POST /api/incidents/:incidentId/recover`) and `A17` (`GET /api/recovery-runs/:recoveryRunId`).
+- **Implementation summary:**
+  1. **Contracts (`packages/contracts`):**
+     - Updated `RecoveryRunStageSchema` with full PRD lifecycle (`queued`, `impact`, `proposing`, `validating`, `activating`, `replaying`, `rolling_back`, `completed`, `failed`).
+     - Authored `RecoveryRunStageHistoryItemSchema`, `RecoveryRunArtifactsSchema`, and `RecoveryRunSchema`.
+     - Authored `StartRecoveryRequestSchema`, `StartRecoveryResponseSchema`, `GetRecoveryRunResponseSchema`.
+     - Extended `IncidentDetailSchema` with `recoveryRuns` collection.
+  2. **API & Engine Service (`apps/api`):**
+     - Added `recoveryRuns` map to `IncidentService`.
+     - Implemented `startRecovery`:
+       - Enforces operator authentication and scoped incident lookup (404 `INCIDENT_NOT_FOUND`).
+       - Enforces concurrency guard (FR-REC-01): returns 409 `RECOVERY_ALREADY_RUNNING` with `activeRecoveryRunId` if a run is already active.
+       - Validates captured baseline requirement (409 `BASELINE_REQUIRED`).
+       - Initializes `RecoveryRun` record in `queued` status and returns 202 with exactly `{ recoveryRunId, incidentId }`.
+       - Triggers asynchronous background recovery pipeline: executes impact analysis (`impact`), proposal synthesis (`proposing`), shadow validation (`validating`), activation and workflow verification (`activating`/`replaying`), or automatic rollback on replay failure (`rolling_back`).
+       - Preserves last valid incident state on infrastructure failure (FR-REC-04).
+     - Implemented `getRecoveryRun` (A17): returns pollable run state, stage history, and artifact IDs.
+     - Mounted routes: `POST /api/incidents/:incidentId/recover` (202 Accepted) and `GET /api/recovery-runs/:recoveryRunId` (200 OK / 404).
+  3. **Control Plane Frontend (`apps/web`):**
+     - Extended `ApiClient` with `startRecovery` and `getRecoveryRun` methods.
+     - Added UI button: "Run Safe Recovery (A16)" in incident inspection drawer.
+     - Added real-time recovery progress tracker displaying run ID, stage history badges, and live execution status.
+  4. **Acceptance & Regression Testing:**
+     - Added 6 integration tests in `apps/api/tests/api.test.ts` covering auth guards, asynchronous 202 start, stage history progression to completion, concurrent recovery rejection (409), unknown incident/run 404s, and baseline requirement guard.
+     - Added UI test in `apps/web/src/App.test.tsx` verifying safe recovery initiation, live progress tracking, and completed state rendering.
+     - Verified all 67 tests pass across 4 workspace packages and apps (`pnpm run test`).
+     - Verified clean production build across workspace (`pnpm -r run build`).
+     - Verified planning integrity via `node scripts/validate-planning.mjs`.
+- **Files Modified:**
+  - `packages/contracts/src/index.ts`
+  - `apps/api/src/app.ts`
+  - `apps/api/src/services/incident-service.ts`
+  - `apps/api/tests/api.test.ts`
+  - `apps/web/src/api-client.ts`
+  - `apps/web/src/App.tsx`
+  - `apps/web/src/App.test.tsx`
+  - `.scratch/driftguard/issues/08-backend-recovery-run.md`
+  - `log.md`
+- **Next Step:** Merge `codex/issue-08-backend-recovery-run` to `main`, push `main`, close Issue #8 via GitHub API, update `log.md` on `main`, and advance to next ticket in topological order.
