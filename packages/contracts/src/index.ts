@@ -789,3 +789,132 @@ export const GetRecoveryRunResponseSchema = z.object({
   recoveryRun: RecoveryRunSchema
 });
 export type GetRecoveryRunResponse = z.infer<typeof GetRecoveryRunResponseSchema>;
+
+// Ticket 30: Dependency Registration & Inventory (A27, A30, A31)
+export const DiscoveryConfidenceSchema = z.enum(['declared', 'observed', 'corroborated']);
+export type DiscoveryConfidence = z.infer<typeof DiscoveryConfidenceSchema>;
+
+export const InventoryHealthSchema = z.enum(['unknown', 'healthy', 'degraded', 'unavailable', 'unsupported']);
+export type InventoryHealth = z.infer<typeof InventoryHealthSchema>;
+
+export const CollectionPolicySchema = z.object({
+  version: z.string(),
+  mode: z.enum(['metadata_only', 'reviewed_fixtures', 'unsupported']),
+  allowedFixtureKeys: z.array(z.string()).optional(),
+  allowedPaths: z.array(z.string()).optional(),
+  rateLimitPerMinute: z.number().int().positive()
+});
+export type CollectionPolicy = z.infer<typeof CollectionPolicySchema>;
+
+// A27: Dependency Ingestion
+export const RegisterDependencyRequestSchema = z.object({
+  schemaVersion: z.literal('1'),
+  projectId: z.string().min(1),
+  environment: ProjectEnvironmentSchema,
+  sdkVersion: z.string().min(1),
+  dependency: z.object({
+    name: z.string().min(1).max(100),
+    type: DependencyTypeSchema,
+    baseUrl: z.string().url().max(512).optional(),
+    packageId: z.string().max(100).optional()
+  })
+});
+export type RegisterDependencyRequest = z.infer<typeof RegisterDependencyRequestSchema>;
+
+export const RegisterDependencyResponseSchema = z.object({
+  dependencyId: z.string(),
+  providerId: z.string().optional(),
+  sessionId: z.string(),
+  inventoryVersion: z.number().int().positive(),
+  collectionPolicy: CollectionPolicySchema,
+  auditEventId: z.string()
+});
+export type RegisterDependencyResponse = z.infer<typeof RegisterDependencyResponseSchema>;
+
+// A30: List Scoped Dependencies
+export const DependencySummarySchema = z.object({
+  dependencyId: z.string(),
+  name: z.string(),
+  type: DependencyTypeSchema,
+  origin: z.string().optional(),
+  providerId: z.string().optional(),
+  confidence: DiscoveryConfidenceSchema,
+  health: InventoryHealthSchema,
+  collectionPolicy: z.object({
+    version: z.string(),
+    mode: z.enum(['metadata_only', 'reviewed_fixtures', 'unsupported'])
+  }),
+  registeredAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  observationCount: z.number().int().nonnegative(),
+  baselineVersion: z.number().int().optional(),
+  latestVersion: z.number().int().optional()
+});
+export type DependencySummary = z.infer<typeof DependencySummarySchema>;
+
+export const ListDependenciesResponseSchema = z.object({
+  dependencies: z.array(DependencySummarySchema),
+  nextCursor: z.string().optional()
+});
+export type ListDependenciesResponse = z.infer<typeof ListDependenciesResponseSchema>;
+
+// A31: Get Dependency Detail
+export const DependencyEndpointSchema = z.object({
+  method: z.string(),
+  routeTemplate: z.string(),
+  observedCount: z.number().int().nonnegative(),
+  lastSeenAt: z.string().datetime().optional()
+});
+export type DependencyEndpoint = z.infer<typeof DependencyEndpointSchema>;
+
+export const DependencyGraphEdgeProvenanceSchema = z.enum([
+  'runtime_read',
+  'declared',
+  'inferred',
+  'manually_configured'
+]);
+export type DependencyGraphEdgeProvenance = z.infer<typeof DependencyGraphEdgeProvenanceSchema>;
+
+export const DependencyGraphEdgeSchema = z.object({
+  source: z.string(),
+  target: z.string(),
+  workflowId: z.string().optional(),
+  provenance: DependencyGraphEdgeProvenanceSchema,
+  canonicalField: z.string().optional(),
+  providerField: z.string().optional()
+});
+export type DependencyGraphEdge = z.infer<typeof DependencyGraphEdgeSchema>;
+
+export const DependencyEvidenceItemSchema = z.object({
+  id: z.string(),
+  method: z.string(),
+  route: z.string(),
+  statusCode: z.number().int(),
+  timestamp: z.string().datetime(),
+  fingerprint: z.string().optional(),
+  evidenceType: z.string()
+});
+export type DependencyEvidenceItem = z.infer<typeof DependencyEvidenceItemSchema>;
+
+export const DependencyDetailResponseSchema = z.object({
+  dependency: DependencySummarySchema,
+  endpoints: z.array(DependencyEndpointSchema),
+  baseline: z
+    .object({
+      version: z.number().int(),
+      capturedAt: z.string().datetime(),
+      fingerprint: z.string()
+    })
+    .optional(),
+  latest: z
+    .object({
+      version: z.number().int(),
+      observedAt: z.string().datetime(),
+      fingerprint: z.string()
+    })
+    .optional(),
+  evidenceHistory: z.array(DependencyEvidenceItemSchema),
+  graphEdges: z.array(DependencyGraphEdgeSchema),
+  nextCursor: z.string().optional()
+});
+export type DependencyDetailResponse = z.infer<typeof DependencyDetailResponseSchema>;

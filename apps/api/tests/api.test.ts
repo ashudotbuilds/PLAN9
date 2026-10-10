@@ -2209,6 +2209,236 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(meta.digest).toBeUndefined(); // Never returns digest
     });
   });
+
+  describe('Ticket 30: Dependency Registration & Scoped Inventory (A27, A30, A31)', () => {
+    it('A27 enforces ingestion auth and scope equality', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+
+      // Create an ingestion key bound to proj_demo_default and development
+      const key = keyService.createKey('proj_demo_default', 'development', 'SDK Ingest Key');
+
+      // 1. Missing Authorization header -> 401
+      const noAuthRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/dependencies',
+        payload: {
+          schemaVersion: '1',
+          projectId: 'proj_demo_default',
+          environment: 'development',
+          sdkVersion: '1.0.0',
+          dependency: { name: 'Billing API', type: 'rest-api', baseUrl: 'http://localhost:4020' }
+        }
+      });
+      expect(noAuthRes.statusCode).toBe(401);
+
+      // 2. Mismatched project scope -> 403 SCOPE_FORBIDDEN
+      const wrongScopeRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/dependencies',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          schemaVersion: '1',
+          projectId: 'other_project',
+          environment: 'development',
+          sdkVersion: '1.0.0',
+          dependency: { name: 'Billing API', type: 'rest-api', baseUrl: 'http://localhost:4020' }
+        }
+      });
+      expect(wrongScopeRes.statusCode).toBe(403);
+      expect(wrongScopeRes.json().error.code).toBe('SCOPE_FORBIDDEN');
+
+      // 3. Revoked key -> 401 REVOKED_INGESTION_KEY
+      keyService.revokeKey('proj_demo_default', key.keyId);
+      const revokedRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/dependencies',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          schemaVersion: '1',
+          projectId: 'proj_demo_default',
+          environment: 'development',
+          sdkVersion: '1.0.0',
+          dependency: { name: 'Billing API', type: 'rest-api', baseUrl: 'http://localhost:4020' }
+        }
+      });
+      expect(revokedRes.statusCode).toBe(401);
+      expect(revokedRes.json().error.code).toBe('REVOKED_INGESTION_KEY');
+    });
+
+    it('A27 registers Users linking to seeded provider, enforces idempotency and revision tracking', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+      const key = keyService.createKey('proj_demo_default', 'development', 'SDK Key');
+
+      // Register Users API
+      const res1 = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/dependencies',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          schemaVersion: '1',
+          projectId: 'proj_demo_default',
+          environment: 'development',
+          sdkVersion: '1.0.0',
+          dependency: {
+            name: 'Users API',
+            type: 'rest-api',
+            baseUrl: 'http://localhost:4010'
+          }
+        }
+      });
+
+      expect(res1.statusCode).toBe(200);
+      const data1 = res1.json();
+      expect(data1.providerId).toBe('users');
+      expect(data1.sessionId).toBe('sess-demo-local-01');
+      expect(data1.collectionPolicy.mode).toBe('reviewed_fixtures');
+      expect(data1.collectionPolicy.allowedFixtureKeys).toContain('user:u-123');
+      expect(data1.auditEventId).toBeDefined();
+
+      // Idempotent re-registration returns same inventoryVersion and reuses original auditEventId
+      const res2 = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/dependencies',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          schemaVersion: '1',
+          projectId: 'proj_demo_default',
+          environment: 'development',
+          sdkVersion: '1.0.0',
+          dependency: {
+            name: 'Users API',
+            type: 'rest-api',
+            baseUrl: 'http://localhost:4010'
+          }
+        }
+      });
+      expect(res2.statusCode).toBe(200);
+      const data2 = res2.json();
+      expect(data2.inventoryVersion).toBe(data1.inventoryVersion);
+      expect(data2.auditEventId).toBe(data1.auditEventId);
+
+      // Changed registration increments inventoryVersion and issues new auditEventId
+      const res3 = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/dependencies',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          schemaVersion: '1',
+          projectId: 'proj_demo_default',
+          environment: 'development',
+          sdkVersion: '1.0.0',
+          dependency: {
+            name: 'Users API',
+            type: 'rest-api',
+            baseUrl: 'http://localhost:4010',
+            packageId: '@acme/users-sdk'
+          }
+        }
+      });
+      expect(res3.statusCode).toBe(200);
+      const data3 = res3.json();
+      expect(data3.inventoryVersion).toBeGreaterThan(data1.inventoryVersion);
+      expect(data3.auditEventId).not.toBe(data1.auditEventId);
+    });
+
+    it('A27 detects type conflicts and handles non-REST unsupported policy', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+      const key = keyService.createKey('proj_demo_default', 'development', 'SDK Key');
+
+      // Attempting to register existing Users API with conflicting type 'mcp-server' returns 409
+      const conflictRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/dependencies',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          schemaVersion: '1',
+          projectId: 'proj_demo_default',
+          environment: 'development',
+          sdkVersion: '1.0.0',
+          dependency: {
+            name: 'Users API',
+            type: 'mcp-server'
+          }
+        }
+      });
+      expect(conflictRes.statusCode).toBe(409);
+      expect(conflictRes.json().error.code).toBe('DEPENDENCY_CONFLICT');
+
+      // Registering a non-REST category returns unsupported policy mode
+      const nonRestRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/dependencies',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          schemaVersion: '1',
+          projectId: 'proj_demo_default',
+          environment: 'development',
+          sdkVersion: '1.0.0',
+          dependency: {
+            name: 'Auth0 IDP',
+            type: 'auth-provider'
+          }
+        }
+      });
+      expect(nonRestRes.statusCode).toBe(200);
+      const nonRestData = nonRestRes.json();
+      expect(nonRestData.collectionPolicy.mode).toBe('unsupported');
+    });
+
+    it('A30 lists scoped dependencies and A31 retrieves evidence-backed detail', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+
+      // List scoped dependencies
+      const listRes = await testApp.inject({
+        method: 'GET',
+        url: '/api/projects/proj-local-01/dependencies?environment=development',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      expect(listRes.statusCode).toBe(200);
+      const list = listRes.json();
+      expect(list.dependencies.length).toBeGreaterThanOrEqual(3);
+
+      const usersDep = list.dependencies.find((d: any) => d.providerId === 'users');
+      expect(usersDep).toBeDefined();
+      expect(usersDep.name).toBe('Users API');
+      expect(usersDep.confidence).toBe('observed');
+      expect(usersDep.health).toBe('healthy');
+
+      // Retrieve detail for Users API
+      const detailRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/projects/proj-local-01/dependencies/${usersDep.dependencyId}?environment=development`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      expect(detailRes.statusCode).toBe(200);
+      const detail = detailRes.json();
+      expect(detail.dependency.dependencyId).toBe(usersDep.dependencyId);
+      expect(detail.endpoints.length).toBeGreaterThan(0);
+      expect(detail.endpoints[0].routeTemplate).toBe('/users/:id');
+
+      // Provenance separation in graph edges
+      expect(detail.graphEdges.length).toBeGreaterThan(0);
+      expect(detail.graphEdges.some((e: any) => e.provenance === 'runtime_read')).toBe(true);
+
+      // Unknown dependency ID returns 404
+      const notFoundRes = await testApp.inject({
+        method: 'GET',
+        url: '/api/projects/proj-local-01/dependencies/dep-nonexistent?environment=development',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      expect(notFoundRes.statusCode).toBe(404);
+      expect(notFoundRes.json().error.code).toBe('DEPENDENCY_NOT_FOUND');
+    });
+  });
 });
+
 
 

@@ -682,4 +682,55 @@ Never include credentials or rewrite another contributor's history.
   - `log.md`
 - **Team Frontier Status:**
   - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29.
-  - Next in line in topological order: **Ticket 30** (`soumya240806`: "[P0] 30: Dependency Registration and Inventory").
+  - Next in line in topological order: **Ticket 30** (`ashudotbuilds`: "[P0] 30: Dependency Registration and Inventory").
+
+---
+
+## Entry: 2026-10-11 - Ticket 30: Register dependencies and inspect evidence-backed scoped inventory (codex/issue-30-dependency-registration-inventory)
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#30](https://github.com/ashudotbuilds/PLAN9/issues/30)
+- **Branch:** `codex/issue-30-dependency-registration-inventory`
+- **Status:** COMPLETED, VERIFIED, AND INTEGRATED into main in single commit per user instruction; Issue #30 closed.
+- **Scope:** PRD FR-INV-01, FR-INV-02, FR-PRJ-01, FR-LIN-01, NFR-20, NFR-22; AT-SDK-02, AT-SDK-07, AT-SDK-08, AT-SDK-11. Sections 12.6, 13, 13.3, 16.1. Endpoints A27 (`POST /api/ingest/dependencies`), A30 (`GET /api/projects/:projectId/dependencies`), A31 (`GET /api/projects/:projectId/dependencies/:dependencyId`).
+- **Implementation summary:**
+  1. **Dependency Ingestion & Natural-Key Upsert (A27, FR-INV-01, AT-SDK-02):**
+     - Auth: `requireIngestionAuth` enforcing Bearer token validation and project/environment scope equality (401/403).
+     - Natural key upsert by `(projectId, environment, name, normalizedOrigin)`.
+     - Origin normalization safely strips userinfo, query params, and trailing slash.
+     - Seeded Users provider mapping: Registration of Users links to seeded provider `users` without creating duplicate records.
+     - Conflict detection: Type or origin mismatches against existing registration throw 409 `DEPENDENCY_CONFLICT`.
+     - Idempotency & Revision tracking: Identical repeated registration preserves `inventoryVersion` and reuses original `auditEventId`; changed registration increments `inventoryVersion` and issues a new `auditEventId`.
+     - Collection policy assignment: Server-assigned versioned policy returns `reviewed_fixtures` with allowed synthetic fixture keys (`user:u-123`, `user:u-456`, `user:u-789`) and paths (`/users/:id`) for Users, `metadata_only` for general REST, and `unsupported` for non-REST categories (`graphql-api`, `sdk-package`, `auth-provider`, etc.).
+     - Registration never fetches a supplied URL or initiates polling.
+  2. **Scoped Inventory List (A30, FR-INV-02):**
+     - Endpoint `GET /api/projects/:projectId/dependencies` protected by `requireOperatorAuth`.
+     - Returns dependencies in stable name/ID order with cursor-based pagination.
+     - Enforces clear separation between discovery confidence (`declared | observed | corroborated`) and health status (`unknown | healthy | degraded | unavailable | unsupported`).
+     - Honestly exposes 0 runtime observations for newly declared dependencies without fabricating metrics.
+  3. **Evidence-Backed Inventory Detail (A31, FR-LIN-01):**
+     - Endpoint `GET /api/projects/:projectId/dependencies/:dependencyId` with operator auth.
+     - Exposes observed endpoints, immutable baseline and latest versions, and evidence history.
+     - Dependency graph edges strictly separate provenance tags: `runtime_read` vs `declared` vs `inferred` vs `manually_configured`.
+  4. **Operator UI & Dashboard Integration:**
+     - Extended web dashboard with a dedicated "Scoped Dependency Inventory (A30, A31)" section.
+     - Interactive table with Name, Type, Origin/Identifier, Discovery badge, Health badge, Policy mode, and Observation count.
+     - Inspection drawer showing detailed endpoints, baseline/latest twin, and provenance-tagged graph edges.
+     - Quick "Register Dependency via SDK Key" form to test A27 directly from UI.
+  5. **Single-Commit Verification:**
+     - 89 vitest tests passing across workspace (`vitest run`).
+     - Workspace cleanly built (`pnpm -r run build`).
+     - Planning verification script passed (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `packages/contracts/src/index.ts`
+  - `apps/api/src/services/inventory-service.ts`
+  - `apps/api/src/app.ts`
+  - `apps/web/src/api-client.ts`
+  - `apps/web/src/App.tsx`
+  - `apps/api/tests/api.test.ts`
+  - `.scratch/driftguard/issues/30-dependency-registration-inventory.md`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30.
+  - Next in line in topological order: **Ticket 31** (`AnushkaBhardwaj15`: "[P0] 31: Ingest SDK observation batches and deduplicate events").

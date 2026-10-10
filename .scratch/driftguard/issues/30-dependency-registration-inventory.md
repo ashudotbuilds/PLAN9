@@ -4,7 +4,7 @@
 
 **Blocked by:** Ticket 29.
 
-**Status:** ready-for-agent (authoring status; verify blockers before execution)
+**Status:** completed
 
 **Priority:** P0
 
@@ -18,10 +18,10 @@
 
 ## Acceptance criteria
 
-- [ ] Upsert stable project/environment/name/origin identities; seeded Users registration joins the existing provider, while origin/type conflicts fail.
-- [ ] Return active session and server-assigned collection policy; permit only reviewed synthetic Users fixture keys/paths, metadata-only elsewhere.
-- [ ] Inventory list/detail exposes safe source/confidence, coverage, scoped endpoints, history pointers, policy, and absent runtime metrics honestly.
-- [ ] Declared/inferred/manual edges remain separate from recorded runtime-read proof. Registration never fetches a supplied URL or starts polling.
+- [x] Upsert stable project/environment/name/origin identities; seeded Users registration joins the existing provider, while origin/type conflicts fail.
+- [x] Return active session and server-assigned collection policy; permit only reviewed synthetic Users fixture keys/paths, metadata-only elsewhere.
+- [x] Inventory list/detail exposes safe source/confidence, coverage, scoped endpoints, history pointers, policy, and absent runtime metrics honestly.
+- [x] Declared/inferred/manual edges remain separate from recorded runtime-read proof. Registration never fetches a supplied URL or starts polling.
 
 ## Test scenarios
 
@@ -46,8 +46,8 @@ One ticket per implementation run; no universal discovery/interception, producti
 
 ## Completion evidence
 
-- [ ] Retain observable backend/test results, scope, provenance, and requirement IDs.
-- [ ] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
-- [ ] Preserve other owners' changes and explicitly review staged paths.
-- [ ] After authorized feature push, append and separately push its log entry.
-- [ ] Mark complete only when acceptance criteria and verified blockers pass.
+- [x] Retain observable backend/test results, scope, provenance, and requirement IDs.
+- [x] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
+- [x] Preserve other owners' changes and explicitly review staged paths.
+- [x] After authorized feature push, append and separately push its log entry.
+- [x] Mark complete only when acceptance criteria and verified blockers pass.

@@ -49,7 +49,15 @@ import {
   RevokeIngestionKeyResponse,
   RevokeIngestionKeyResponseSchema,
   ProjectDetailResponse,
-  ProjectDetailResponseSchema
+  ProjectDetailResponseSchema,
+  RegisterDependencyRequest,
+  RegisterDependencyResponse,
+  RegisterDependencyResponseSchema,
+  DependencySummary,
+  ListDependenciesResponse,
+  ListDependenciesResponseSchema,
+  DependencyDetailResponse,
+  DependencyDetailResponseSchema
 } from '@driftguard/contracts';
 
 
@@ -593,6 +601,89 @@ export class ApiClient {
 
     const data = await res.json();
     return RevokeIngestionKeyResponseSchema.parse(data);
+  }
+
+  // Ticket 30: Dependency Registration & Inventory (A27, A30, A31)
+  async registerDependency(
+    apiKey: string,
+    req: RegisterDependencyRequest
+  ): Promise<RegisterDependencyResponse> {
+    const res = await fetch(`${this.apiBase}/ingest/dependencies`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(req)
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      const err = new Error(errorJson.error?.message || `Failed to register dependency: ${res.status}`);
+      (err as any).code = errorJson.error?.code;
+      throw err;
+    }
+
+    const data = await res.json();
+    return RegisterDependencyResponseSchema.parse(data);
+  }
+
+  async listDependencies(
+    projectId: string,
+    environment: ProjectEnvironment,
+    limit = 50,
+    cursor?: string
+  ): Promise<ListDependenciesResponse> {
+    const params = new URLSearchParams({ environment, limit: String(limit) });
+    if (cursor) {
+      params.set('cursor', cursor);
+    }
+
+    const res = await fetch(`${this.apiBase}/projects/${projectId}/dependencies?${params.toString()}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include'
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      const err = new Error(errorJson.error?.message || `Failed to list dependencies: ${res.status}`);
+      (err as any).code = errorJson.error?.code;
+      throw err;
+    }
+
+    const data = await res.json();
+    return ListDependenciesResponseSchema.parse(data);
+  }
+
+  async getDependencyDetail(
+    projectId: string,
+    dependencyId: string,
+    environment: ProjectEnvironment
+  ): Promise<DependencyDetailResponse> {
+    const params = new URLSearchParams({ environment });
+    const res = await fetch(
+      `${this.apiBase}/projects/${projectId}/dependencies/${dependencyId}?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include'
+      }
+    );
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      const err = new Error(errorJson.error?.message || `Failed to get dependency detail: ${res.status}`);
+      (err as any).code = errorJson.error?.code;
+      throw err;
+    }
+
+    const data = await res.json();
+    return DependencyDetailResponseSchema.parse(data);
   }
 }
 

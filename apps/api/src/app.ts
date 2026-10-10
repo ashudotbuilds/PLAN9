@@ -16,7 +16,8 @@ import {
   RunObservationsRequestSchema,
   ActivatePatchRequestSchema,
   RollbackPatchRequestSchema,
-  CreateIngestionKeyRequestSchema
+  CreateIngestionKeyRequestSchema,
+  RegisterDependencyRequestSchema
 } from '@driftguard/contracts';
 import { randomUUID } from 'node:crypto';
 import { OperatorAuthService } from './services/operator-auth-service.js';
@@ -24,6 +25,7 @@ import { ProjectService } from './services/project-service.js';
 import { BaselineService } from './services/baseline-service.js';
 import { IncidentService } from './services/incident-service.js';
 import { KeyService } from './services/key-service.js';
+import { InventoryService } from './services/inventory-service.js';
 
 export interface ApiAppOptions {
   operatorToken?: string;
@@ -32,6 +34,7 @@ export interface ApiAppOptions {
   incidentService?: IncidentService;
   projectService?: ProjectService;
   keyService?: KeyService;
+  inventoryService?: InventoryService;
 }
 
 export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
@@ -52,6 +55,7 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
   const incidentService =
     options.incidentService ||
     new IncidentService(baselineService, { mockProvidersBaseUrl: options.mockProvidersBaseUrl });
+  const inventoryService = options.inventoryService || new InventoryService();
 
 
 
@@ -707,6 +711,107 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     }
 
     return reply.status(200).send({ recoveryRun });
+  });
+
+  // Ticket 30: Dependency Registration & Scoped Inventory (A27, A30, A31)
+
+  // A27: Ingest Dependency Registration
+  app.post('/api/ingest/dependencies', { preHandler: [requireIngestionAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const parsed = RegisterDependencyRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Invalid dependency registration payload.',
+          details: parsed.error.format(),
+          correlationId
+        }
+      });
+    }
+
+    try {
+      const activeSessionId = 'sess-demo-local-01';
+      const result = inventoryService.registerDependency(parsed.data, activeSessionId);
+      return reply.status(200).send(result);
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500;
+      return reply.status(statusCode).send({
+        error: {
+          code: err.code || 'INTERNAL_ERROR',
+          message: err.message,
+          details: {},
+          correlationId
+        }
+      });
+    }
+  });
+
+  // A30: List Scoped Dependencies
+  app.get('/api/projects/:projectId/dependencies', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const { projectId } = request.params as { projectId: string };
+    const query = request.query as { environment?: string; limit?: string; cursor?: string };
+
+    const envCandidate = query.environment;
+    const envParsed = envCandidate ? ProjectEnvironmentSchema.safeParse(envCandidate) : null;
+    if (!envParsed || !envParsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_QUERY',
+          message: "A valid 'environment' query parameter ('development' | 'production') is required.",
+          details: {},
+          correlationId
+        }
+      });
+    }
+
+    const limit = query.limit ? parseInt(query.limit, 10) : 50;
+    const result = inventoryService.listDependencies(projectId, envParsed.data, limit, query.cursor);
+    return reply.status(200).send(result);
+  });
+
+  // A31: Get Scoped Dependency Detail
+  app.get('/api/projects/:projectId/dependencies/:dependencyId', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const { projectId, dependencyId } = request.params as { projectId: string; dependencyId: string };
+    const query = request.query as { environment?: string };
+
+    const envCandidate = query.environment;
+    const envParsed = envCandidate ? ProjectEnvironmentSchema.safeParse(envCandidate) : null;
+    if (!envParsed || !envParsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_QUERY',
+          message: "A valid 'environment' query parameter ('development' | 'production') is required.",
+          details: {},
+          correlationId
+        }
+      });
+    }
+
+    try {
+      const activeBaseline = baselineService.getBaseline(projectId, envParsed.data);
+      const incidents = incidentService.listIncidents(projectId, envParsed.data);
+      const result = inventoryService.getDependencyDetail(
+        projectId,
+        envParsed.data,
+        dependencyId,
+        activeBaseline?.summary,
+        incidents
+      );
+      return reply.status(200).send(result);
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500;
+      return reply.status(statusCode).send({
+        error: {
+          code: err.code || 'INTERNAL_ERROR',
+          message: err.message,
+          details: { dependencyId },
+          correlationId
+        }
+      });
+    }
   });
 
   return app;

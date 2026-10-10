@@ -15,7 +15,10 @@ import {
   PostActivationReplayOutcome,
   RecoveryRun,
   ProviderSummary,
-  IngestionKeyMetadata
+  IngestionKeyMetadata,
+  DependencySummary,
+  DependencyDetailResponse,
+  DependencyType
 } from '@driftguard/contracts';
 
 interface AuditTimelineEntry {
@@ -115,6 +118,17 @@ export function App() {
   const [issuingKey, setIssuingKey] = useState(false);
   const [keyError, setKeyError] = useState<string | null>(null);
 
+  // Ticket 30: Scoped Dependency Inventory (A27, A30, A31)
+  const [dependencies, setDependencies] = useState<DependencySummary[]>([]);
+  const [selectedDependencyDetail, setSelectedDependencyDetail] = useState<DependencyDetailResponse | null>(null);
+  const [loadingDependencies, setLoadingDependencies] = useState(false);
+  const [dependencyError, setDependencyError] = useState<string | null>(null);
+  const [regDepName, setRegDepName] = useState('');
+  const [regDepType, setRegDepType] = useState<DependencyType>('rest-api');
+  const [regDepBaseUrl, setRegDepBaseUrl] = useState('');
+  const [registeringDep, setRegisteringDep] = useState(false);
+  const [regDepSuccess, setRegDepSuccess] = useState<string | null>(null);
+
   const recordAudit = (id: string, action: string, summary: string, scope?: string) => {
     setAuditTimeline((prev) => [
       {
@@ -126,6 +140,19 @@ export function App() {
       },
       ...prev.slice(0, 49)
     ]);
+  };
+
+  const loadDependencies = async (projId: string, env: ProjectEnvironment) => {
+    try {
+      setLoadingDependencies(true);
+      const res = await apiClient.listDependencies(projId, env);
+      setDependencies(res.dependencies);
+      setDependencyError(null);
+    } catch (err: any) {
+      setDependencyError(err.message || 'Failed to load dependencies');
+    } finally {
+      setLoadingDependencies(false);
+    }
   };
 
   const fetchStatus = async () => {
@@ -160,6 +187,7 @@ export function App() {
       } catch {
         // Ignore
       }
+      await loadDependencies(projId, env);
     } catch {
       // Ignore if unauthenticated
     }
@@ -677,7 +705,50 @@ export function App() {
     }
   };
 
+  const handleViewDependencyDetail = async (depId: string) => {
+    try {
+      setDependencyError(null);
+      const detail = await apiClient.getDependencyDetail(
+        selectedProjectId,
+        depId,
+        selectedEnvironment
+      );
+      setSelectedDependencyDetail(detail);
+    } catch (err: any) {
+      setDependencyError(err.message || 'Failed to load dependency detail.');
+    }
+  };
 
+  const handleRegisterDependency = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regDepName.trim() || !selectedProjectId) return;
+    setRegisteringDep(true);
+    setDependencyError(null);
+    setRegDepSuccess(null);
+    try {
+      const activeKey = issuedApiKey?.apiKey || 'dg_ing_preview.mock_bearer_token';
+      const res = await apiClient.registerDependency(activeKey, {
+        schemaVersion: '1',
+        projectId: selectedProjectId,
+        environment: selectedEnvironment,
+        sdkVersion: '1.0.0',
+        dependency: {
+          name: regDepName.trim(),
+          type: regDepType,
+          baseUrl: regDepBaseUrl.trim() || undefined
+        }
+      });
+      setRegDepSuccess(`Registered dependency '${res.dependencyId}' (Inventory v${res.inventoryVersion}, Policy: ${res.collectionPolicy.mode})`);
+      recordAudit(res.auditEventId, 'register_dependency', `Registered dependency '${regDepName}' (${regDepType})`);
+      setRegDepName('');
+      setRegDepBaseUrl('');
+      await loadDependencies(selectedProjectId, selectedEnvironment);
+    } catch (err: any) {
+      setDependencyError(err.message || 'Failed to register dependency.');
+    } finally {
+      setRegisteringDep(false);
+    }
+  };
 
   const getStatusBadge = (status: 'loading' | 'ready' | 'offline') => {
     switch (status) {
@@ -1088,6 +1159,232 @@ export function App() {
               </tbody>
             </table>
           </div>
+        </section>
+
+        {/* Ticket 30: Scoped Dependency Inventory & Registration (A27, A30, A31) */}
+        <section aria-label="Scoped Dependency Inventory" className="bg-[#161b22] border border-[#30363d] rounded p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-sm font-semibold text-[#f0f6fc]">Scoped Dependency Inventory (A30, A31)</h2>
+                <span className="px-2 py-0.5 rounded text-xs font-mono font-medium bg-[#21262d] text-[#58a6ff] border border-[#30363d]">
+                  {dependencies.length} Tracked
+                </span>
+              </div>
+              <p className="text-xs text-[#8b949e]">
+                Distinguishes declared registration identity from recorded runtime read proof (PRD FR-INV-01, FR-INV-02).
+              </p>
+            </div>
+
+            <button
+              onClick={() => loadDependencies(selectedProjectId, selectedEnvironment)}
+              disabled={loadingDependencies || !selectedProjectId}
+              className="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-50 text-[#c9d1d9] rounded text-xs font-medium transition cursor-pointer"
+            >
+              {loadingDependencies ? 'Refreshing...' : 'Refresh Inventory'}
+            </button>
+          </div>
+
+          {dependencyError && (
+            <div className="p-3 bg-[#da3633]/10 border border-[#da3633]/30 rounded text-[#f85149] font-mono text-xs">
+              {dependencyError}
+            </div>
+          )}
+
+          {regDepSuccess && (
+            <div className="p-3 bg-[#238636]/10 border border-[#238636]/30 rounded text-[#3fb950] font-mono text-xs">
+              {regDepSuccess}
+            </div>
+          )}
+
+          {/* Table of Dependencies */}
+          <div className="overflow-x-auto pt-2 border-t border-[#30363d]">
+            <table className="w-full text-left text-xs font-mono border-collapse">
+              <thead>
+                <tr className="border-b border-[#30363d] text-[#8b949e]">
+                  <th className="py-2 px-3 font-medium">NAME</th>
+                  <th className="py-2 px-3 font-medium">TYPE</th>
+                  <th className="py-2 px-3 font-medium">ORIGIN / IDENTIFIER</th>
+                  <th className="py-2 px-3 font-medium">DISCOVERY</th>
+                  <th className="py-2 px-3 font-medium">HEALTH</th>
+                  <th className="py-2 px-3 font-medium">POLICY</th>
+                  <th className="py-2 px-3 font-medium">OBSERVED</th>
+                  <th className="py-2 px-3 font-medium text-right">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#21262d]">
+                {dependencies.map((d) => (
+                  <tr key={d.dependencyId} className="hover:bg-[#21262d]/50 transition-colors">
+                    <td className="py-2 px-3 text-[#f0f6fc] font-semibold">{d.name}</td>
+                    <td className="py-2 px-3 text-[#58a6ff]">{d.type}</td>
+                    <td className="py-2 px-3 text-[#8b949e] max-w-[200px] truncate">{d.origin || 'metadata-only'}</td>
+                    <td className="py-2 px-3">
+                      <span
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          d.confidence === 'corroborated'
+                            ? 'bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40'
+                            : d.confidence === 'observed'
+                            ? 'bg-[#1f6feb]/20 text-[#58a6ff] border border-[#1f6feb]/40'
+                            : 'bg-[#8b949e]/20 text-[#8b949e] border border-[#8b949e]/40'
+                        }`}
+                      >
+                        {d.confidence.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3">
+                      <span
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          d.health === 'healthy'
+                            ? 'bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40'
+                            : d.health === 'degraded'
+                            ? 'bg-[#d29922]/20 text-[#d29922] border border-[#d29922]/40'
+                            : d.health === 'unavailable'
+                            ? 'bg-[#da3633]/20 text-[#f85149] border border-[#da3633]/40'
+                            : 'bg-[#30363d] text-[#8b949e] border border-[#484f58]'
+                        }`}
+                      >
+                        {d.health.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-[#c9d1d9]">{d.collectionPolicy.mode}</td>
+                    <td className="py-2 px-3 text-[#c9d1d9]">{d.observationCount}</td>
+                    <td className="py-2 px-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleViewDependencyDetail(d.dependencyId)}
+                        className="px-2 py-0.5 bg-[#1f6feb]/20 hover:bg-[#1f6feb]/30 text-[#58a6ff] border border-[#1f6feb]/40 rounded text-[10px]"
+                      >
+                        Inspect
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {dependencies.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="py-3 px-3 text-[#8b949e] text-center">
+                      No dependencies registered in this environment.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Register Dependency Test Form (A27) */}
+          <div className="p-3 bg-[#0d1117] border border-[#30363d] rounded space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#f0f6fc]">Register Dependency via SDK Key (A27)</span>
+              <span className="text-[10px] text-[#8b949e] font-mono">Bound to active project/environment</span>
+            </div>
+            <form onSubmit={handleRegisterDependency} className="flex flex-wrap gap-2 items-center text-xs">
+              <input
+                type="text"
+                placeholder="Name (e.g. Stripe API)..."
+                value={regDepName}
+                onChange={(e) => setRegDepName(e.target.value)}
+                className="px-2.5 py-1 bg-[#161b22] border border-[#30363d] rounded text-[#c9d1d9] focus:outline-none focus:ring-1 focus:ring-[#58a6ff] w-40"
+              />
+              <select
+                value={regDepType}
+                onChange={(e) => setRegDepType(e.target.value as DependencyType)}
+                className="px-2 py-1 bg-[#161b22] border border-[#30363d] rounded text-[#c9d1d9] focus:outline-none focus:ring-1 focus:ring-[#58a6ff]"
+              >
+                <option value="rest-api">rest-api</option>
+                <option value="graphql-api">graphql-api</option>
+                <option value="sdk-package">sdk-package</option>
+                <option value="auth-provider">auth-provider</option>
+                <option value="webhook">webhook</option>
+                <option value="mcp-server">mcp-server</option>
+                <option value="other">other</option>
+              </select>
+              <input
+                type="text"
+                placeholder="Base URL (e.g. http://localhost:4010)..."
+                value={regDepBaseUrl}
+                onChange={(e) => setRegDepBaseUrl(e.target.value)}
+                className="flex-1 min-w-[200px] px-2.5 py-1 bg-[#161b22] border border-[#30363d] rounded text-[#c9d1d9] focus:outline-none focus:ring-1 focus:ring-[#58a6ff]"
+              />
+              <button
+                type="submit"
+                disabled={registeringDep || !regDepName.trim()}
+                className="px-3 py-1 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white font-medium rounded text-xs cursor-pointer"
+              >
+                {registeringDep ? 'Registering...' : '+ Register Dependency'}
+              </button>
+            </form>
+          </div>
+
+          {/* Dependency Detail Inspection Drawer/Modal */}
+          {selectedDependencyDetail && (
+            <div className="p-4 bg-[#0d1117] border border-[#58a6ff]/40 rounded space-y-3 font-mono text-xs">
+              <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
+                <div>
+                  <span className="font-bold text-[#f0f6fc] text-sm">{selectedDependencyDetail.dependency.name}</span>
+                  <span className="ml-2 text-[#8b949e]">({selectedDependencyDetail.dependency.dependencyId})</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDependencyDetail(null)}
+                  className="px-2 py-0.5 bg-[#21262d] hover:bg-[#30363d] text-[#8b949e] rounded text-xs"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px]">
+                <div className="p-2.5 bg-[#161b22] rounded border border-[#30363d] space-y-1">
+                  <div className="text-[#8b949e]">Identity & Policy</div>
+                  <div className="text-[#c9d1d9]">Type: <span className="text-[#58a6ff]">{selectedDependencyDetail.dependency.type}</span></div>
+                  <div className="text-[#c9d1d9]">Policy: <span className="text-[#3fb950]">{selectedDependencyDetail.dependency.collectionPolicy.mode}</span></div>
+                  <div className="text-[#c9d1d9]">Confidence: <span className="text-[#d29922]">{selectedDependencyDetail.dependency.confidence}</span></div>
+                </div>
+
+                <div className="p-2.5 bg-[#161b22] rounded border border-[#30363d] space-y-1">
+                  <div className="text-[#8b949e]">Twin & Baseline</div>
+                  <div className="text-[#c9d1d9]">Baseline: {selectedDependencyDetail.baseline ? `v${selectedDependencyDetail.baseline.version}` : 'None'}</div>
+                  <div className="text-[#c9d1d9]">Fingerprint: {selectedDependencyDetail.baseline?.fingerprint || 'Not captured'}</div>
+                  <div className="text-[#c9d1d9]">Latest: {selectedDependencyDetail.latest ? `v${selectedDependencyDetail.latest.version}` : 'None'}</div>
+                </div>
+
+                <div className="p-2.5 bg-[#161b22] rounded border border-[#30363d] space-y-1">
+                  <div className="text-[#8b949e]">Runtime Proof vs Declared</div>
+                  <div className="text-[#c9d1d9]">Observations: {selectedDependencyDetail.dependency.observationCount}</div>
+                  <div className="text-[#c9d1d9]">Endpoints Seen: {selectedDependencyDetail.endpoints.length}</div>
+                  <div className="text-[#c9d1d9]">Graph Edges: {selectedDependencyDetail.graphEdges.length}</div>
+                </div>
+              </div>
+
+              {/* Endpoints */}
+              {selectedDependencyDetail.endpoints.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[#8b949e] font-semibold">Observed Endpoints:</div>
+                  <div className="space-y-1">
+                    {selectedDependencyDetail.endpoints.map((ep, idx) => (
+                      <div key={idx} className="flex justify-between px-2 py-1 bg-[#161b22] rounded border border-[#30363d] text-[11px]">
+                        <span><span className="text-[#58a6ff]">{ep.method}</span> {ep.routeTemplate}</span>
+                        <span className="text-[#8b949e]">{ep.observedCount} calls</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Graph Edges & Provenance */}
+              <div className="space-y-1">
+                <div className="text-[#8b949e] font-semibold">Dependency Graph & Provenance:</div>
+                <div className="space-y-1">
+                  {selectedDependencyDetail.graphEdges.map((edge, idx) => (
+                    <div key={idx} className="flex justify-between px-2 py-1 bg-[#161b22] rounded border border-[#30363d] text-[11px]">
+                      <span>{edge.source} &rarr; {edge.target}</span>
+                      <span className={`px-1.5 py-0.2 rounded text-[10px] ${edge.provenance === 'runtime_read' ? 'bg-[#238636]/20 text-[#3fb950]' : 'bg-[#8b949e]/20 text-[#8b949e]'}`}>
+                        {edge.provenance}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Service Readiness Cards */}
