@@ -17,7 +17,8 @@ import {
   ActivatePatchRequestSchema,
   RollbackPatchRequestSchema,
   CreateIngestionKeyRequestSchema,
-  RegisterDependencyRequestSchema
+  RegisterDependencyRequestSchema,
+  ObservationBatchV1Schema
 } from '@driftguard/contracts';
 import { randomUUID } from 'node:crypto';
 import { OperatorAuthService } from './services/operator-auth-service.js';
@@ -26,6 +27,7 @@ import { BaselineService } from './services/baseline-service.js';
 import { IncidentService } from './services/incident-service.js';
 import { KeyService } from './services/key-service.js';
 import { InventoryService } from './services/inventory-service.js';
+import { ObservationIngestionService } from './services/observation-ingestion-service.js';
 
 export interface ApiAppOptions {
   operatorToken?: string;
@@ -35,6 +37,7 @@ export interface ApiAppOptions {
   projectService?: ProjectService;
   keyService?: KeyService;
   inventoryService?: InventoryService;
+  observationIngestionService?: ObservationIngestionService;
 }
 
 export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
@@ -56,6 +59,9 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     options.incidentService ||
     new IncidentService(baselineService, { mockProvidersBaseUrl: options.mockProvidersBaseUrl });
   const inventoryService = options.inventoryService || new InventoryService();
+  const observationIngestionService =
+    options.observationIngestionService ||
+    new ObservationIngestionService(inventoryService, incidentService);
 
 
 
@@ -814,7 +820,82 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     }
   });
 
+  // Ticket 31: SDK Observation Ingestion & Diagnostics (A28, A29)
+
+  // A28: Ingest SDK Telemetry Observations Batch
+  app.post(
+    '/api/ingest/observations',
+    { bodyLimit: 131072, preHandler: [requireIngestionAuth] },
+    async (request, reply) => {
+      const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+      const parsed = ObservationBatchV1Schema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_INPUT',
+            message: 'Invalid observation batch payload.',
+            details: parsed.error.format(),
+            correlationId
+          }
+        });
+      }
+
+      try {
+        const activeSessionId = 'sess-demo-local-01';
+        const result = await observationIngestionService.ingestObservations(parsed.data, activeSessionId);
+        return reply.status(200).send(result);
+      } catch (err: any) {
+        const statusCode = err.statusCode || 500;
+        return reply.status(statusCode).send({
+          error: {
+            code: err.code || 'INTERNAL_ERROR',
+            message: err.message,
+            details: {},
+            correlationId
+          }
+        });
+      }
+    }
+  );
+
+  // A29: SDK Diagnostics
+  app.get('/api/sdk/diagnostics', { preHandler: [requireIngestionAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const auth = (request as any).ingestionAuth;
+    if (!auth) {
+      return reply.status(401).send({
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Ingestion authentication required.',
+          details: {},
+          correlationId
+        }
+      });
+    }
+
+    try {
+      const activeSessionId = 'sess-demo-local-01';
+      const result = observationIngestionService.getDiagnostics(
+        auth.projectId,
+        auth.environment,
+        activeSessionId
+      );
+      return reply.status(200).send(result);
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500;
+      return reply.status(statusCode).send({
+        error: {
+          code: err.code || 'INTERNAL_ERROR',
+          message: err.message,
+          details: {},
+          correlationId
+        }
+      });
+    }
+  });
+
   return app;
 }
+
 
 

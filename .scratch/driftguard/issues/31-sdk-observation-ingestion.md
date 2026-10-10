@@ -4,7 +4,7 @@
 
 **Blocked by:** Ticket 30, Ticket 03.
 
-**Status:** ready-for-agent (authoring status; verify blockers before execution)
+**Status:** completed
 
 **Priority:** P0
 
@@ -18,10 +18,10 @@
 
 ## Acceptance criteria
 
-- [ ] Validate the exact V1 batch schema and policy, normalize route/timestamps, server-redact and fingerprint allowed evidence; metadata-only events cannot claim field semantics.
-- [ ] Use serialized atomic write, scoped stable event/batch IDs and content digests; exact retries do not increment counts/audit/incidents, conflicts have no partial writes.
-- [ ] Reject stale sessions, cross-scope/unknown dependencies, excessive size/rate/retention, and timestamps outside policy; late events are historical only.
-- [ ] Maintain independently immutable baseline and latest pointers, compatible fixture/policy contexts, safe diagnostics and correlated audit; no ingestion-authorized recovery or outbound registration fetch.
+- [x] Validate the exact V1 batch schema and policy, normalize route/timestamps, server-redact and fingerprint allowed evidence; metadata-only events cannot claim field semantics.
+- [x] Use serialized atomic write, scoped stable event/batch IDs and content digests; exact retries do not increment counts/audit/incidents, conflicts have no partial writes.
+- [x] Reject stale sessions, cross-scope/unknown dependencies, excessive size/rate/retention, and timestamps outside policy; late events are historical only.
+- [x] Maintain independently immutable baseline and latest pointers, compatible fixture/policy contexts, safe diagnostics and correlated audit; no ingestion-authorized recovery or outbound registration fetch.
 
 ## Test scenarios
 

@@ -505,4 +505,18 @@ export class InventoryService {
       graphEdges
     };
   }
+
+  public getDependency(dependencyId: string): StoredDependency | undefined {
+    return this.dependencies.get(dependencyId);
+  }
+
+  public recordObservation(dependencyId: string, observedAt: string): void {
+    const dep = this.dependencies.get(dependencyId);
+    if (!dep) return;
+    dep.observationCount += 1;
+    dep.updatedAt = observedAt;
+    if (dep.confidence === 'declared') {
+      dep.confidence = 'observed';
+    }
+  }
 }

@@ -57,7 +57,12 @@ import {
   ListDependenciesResponse,
   ListDependenciesResponseSchema,
   DependencyDetailResponse,
-  DependencyDetailResponseSchema
+  DependencyDetailResponseSchema,
+  ObservationBatchV1,
+  IngestObservationsResponse,
+  IngestObservationsResponseSchema,
+  SdkDiagnosticsResponse,
+  SdkDiagnosticsResponseSchema
 } from '@driftguard/contracts';
 
 
@@ -685,6 +690,52 @@ export class ApiClient {
     const data = await res.json();
     return DependencyDetailResponseSchema.parse(data);
   }
+
+  // Ticket 31: SDK Observation Ingestion & Diagnostics (A28, A29)
+  async ingestObservations(
+    apiKey: string,
+    batch: ObservationBatchV1
+  ): Promise<IngestObservationsResponse> {
+    const res = await fetch(`${this.apiBase}/ingest/observations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(batch)
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      const err = new Error(errorJson.error?.message || `Failed to ingest observations: ${res.status}`);
+      (err as any).code = errorJson.error?.code;
+      throw err;
+    }
+
+    const data = await res.json();
+    return IngestObservationsResponseSchema.parse(data);
+  }
+
+  async getSdkDiagnostics(apiKey: string): Promise<SdkDiagnosticsResponse> {
+    const res = await fetch(`${this.apiBase}/sdk/diagnostics`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      }
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      const err = new Error(errorJson.error?.message || `Failed to get SDK diagnostics: ${res.status}`);
+      (err as any).code = errorJson.error?.code;
+      throw err;
+    }
+
+    const data = await res.json();
+    return SdkDiagnosticsResponseSchema.parse(data);
+  }
 }
 
 export const apiClient = new ApiClient();
+

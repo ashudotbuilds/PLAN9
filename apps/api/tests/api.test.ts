@@ -2438,7 +2438,339 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(notFoundRes.json().error.code).toBe('DEPENDENCY_NOT_FOUND');
     });
   });
+
+  describe('Ticket 31: SDK Observation Ingestion & Diagnostics (A28, A29)', () => {
+    it('A28 enforces authentication and scope equality on batch ingestion', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+      const key = keyService.createKey('proj_demo_default', 'development', 'SDK Key');
+
+      const batch = {
+        schemaVersion: '1',
+        batchId: 'c28a2b53-48b0-4660-84c4-7ff536069901',
+        projectId: 'proj_demo_default',
+        environment: 'development',
+        sessionId: 'sess-demo-local-01',
+        sdkVersion: '1.0.0',
+        events: []
+      };
+
+      // 1. Missing Authorization header -> 401
+      const noAuthRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        payload: batch
+      });
+      expect(noAuthRes.statusCode).toBe(401);
+
+      // 2. Mismatched project scope -> 403 SCOPE_FORBIDDEN
+      const wrongScopeRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          ...batch,
+          projectId: 'other_project'
+        }
+      });
+      expect(wrongScopeRes.statusCode).toBe(403);
+      expect(wrongScopeRes.json().error.code).toBe('SCOPE_FORBIDDEN');
+    });
+
+    it('A28 accepts valid batch, deduplicates exact retry, and detects conflicts', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+      const key = keyService.createKey('proj-local-01', 'development', 'SDK Key');
+
+      const now = new Date().toISOString();
+      const batchId = 'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d';
+      const eventId = 'b2c3d4e5-f6a1-4b2c-9d3e-4f5a6b7c8d9e';
+
+      const batch = {
+        schemaVersion: '1',
+        batchId,
+        projectId: 'proj-local-01',
+        environment: 'development',
+        sessionId: 'sess-demo-local-01',
+        sdkVersion: '1.0.0',
+        events: [
+          {
+            eventId,
+            dependencyId: 'dep-proj-local-01-development-users',
+            method: 'GET',
+            routeTemplate: '/users/:id',
+            statusCode: 200,
+            durationMs: 15,
+            observedAt: now,
+            collectionPolicyVersion: 1,
+            fixtureKey: 'user:u-123',
+            responseEvidence: { id: 'u-123', name: 'Aarav' }
+          }
+        ]
+      };
+
+      // 1. Initial ingestion -> 200 accepted
+      const res1 = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: batch
+      });
+      expect(res1.statusCode).toBe(200);
+      const data1 = res1.json();
+      expect(data1.batchId).toBe(batchId);
+      expect(data1.accepted).toBe(1);
+      expect(data1.duplicates).toBe(0);
+      expect(data1.auditEventId).toBeDefined();
+
+      // 2. Exact retry -> 200 with duplicates: 1, accepted: 0
+      const res2 = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: batch
+      });
+      expect(res2.statusCode).toBe(200);
+      const data2 = res2.json();
+      expect(data2.accepted).toBe(0);
+      expect(data2.duplicates).toBe(1);
+      expect(data2.auditEventId).toBe(data1.auditEventId);
+
+      // 3. Same batchId with conflicting payload -> 409 BATCH_ID_CONFLICT
+      const conflictBatch = {
+        ...batch,
+        events: [
+          {
+            ...batch.events[0],
+            durationMs: 999
+          }
+        ]
+      };
+      const res3 = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: conflictBatch
+      });
+      expect(res3.statusCode).toBe(409);
+      expect(res3.json().error.code).toBe('BATCH_ID_CONFLICT');
+
+      // 4. Different batchId with conflicting eventId -> 409 EVENT_ID_CONFLICT
+      const conflictEventBatch = {
+        ...batch,
+        batchId: 'f0e1d2c3-b4a5-4f6e-8d7c-6b5a4f3e2d1c',
+        events: [
+          {
+            ...batch.events[0],
+            statusCode: 500 // Conflicting status code for same eventId
+          }
+        ]
+      };
+      const res4 = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: conflictEventBatch
+      });
+      expect(res4.statusCode).toBe(409);
+      expect(res4.json().error.code).toBe('EVENT_ID_CONFLICT');
+    });
+
+    it('A28 detects user drift findings on reviewed fixture evidence and redacts sensitive data', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+      const key = keyService.createKey('proj-local-01', 'development', 'SDK Key');
+
+      const now = new Date().toISOString();
+      const driftBatch = {
+        schemaVersion: '1',
+        batchId: 'e1d2c3b4-a5f6-4e1d-8c2b-3a4f5e6d7c8b',
+        projectId: 'proj-local-01',
+        environment: 'development',
+        sessionId: 'sess-demo-local-01',
+        sdkVersion: '1.0.0',
+        events: [
+          {
+            eventId: 'd2c3b4a5-f6e1-4d2c-9b3a-4e5f6d7c8b9a',
+            dependencyId: 'dep-proj-local-01-development-users',
+            method: 'GET',
+            routeTemplate: '/users/:id',
+            statusCode: 200,
+            durationMs: 20,
+            observedAt: now,
+            collectionPolicyVersion: 1,
+            fixtureKey: 'user:u-123',
+            responseEvidence: {
+              id: 'u-123',
+              display_name: 'Aarav', // Drift: display_name instead of name
+              token: 'secret-bearer-token' // Should be sanitized
+            }
+          }
+        ]
+      };
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: driftBatch
+      });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+      expect(data.accepted).toBe(1);
+      expect(data.findings.length).toBe(1);
+      expect(data.findings[0].evidenceStatus).toBe('confirmed');
+    });
+
+    it('A28 rejects invalid timestamps, stale sessions, and unknown dependencies', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+      const key = keyService.createKey('proj-local-01', 'development', 'SDK Key');
+
+      // 1. Stale / mismatched session -> 400 STALE_SESSION
+      const staleRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          schemaVersion: '1',
+          batchId: '11111111-2222-4333-8444-555555555555',
+          projectId: 'proj-local-01',
+          environment: 'development',
+          sessionId: 'sess-stale-old-99',
+          sdkVersion: '1.0.0',
+          events: []
+        }
+      });
+      expect(staleRes.statusCode).toBe(400);
+      expect(staleRes.json().error.code).toBe('STALE_SESSION');
+
+      // 2. Future timestamp (>5 minutes) -> 400 INVALID_EVENT_TIMESTAMP
+      const futureTime = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const futureRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          schemaVersion: '1',
+          batchId: '22222222-3333-4444-8555-666666666666',
+          projectId: 'proj-local-01',
+          environment: 'development',
+          sessionId: 'sess-demo-local-01',
+          sdkVersion: '1.0.0',
+          events: [
+            {
+              eventId: '33333333-4444-4555-8666-777777777777',
+              dependencyId: 'dep-proj-local-01-development-users',
+              method: 'GET',
+              routeTemplate: '/users/:id',
+              statusCode: 200,
+              durationMs: 10,
+              observedAt: futureTime,
+              collectionPolicyVersion: 1
+            }
+          ]
+        }
+      });
+      expect(futureRes.statusCode).toBe(400);
+      expect(futureRes.json().error.code).toBe('INVALID_EVENT_TIMESTAMP');
+
+      // 3. Unknown dependency -> 404 DEPENDENCY_NOT_FOUND
+      const unknownDepRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          schemaVersion: '1',
+          batchId: '44444444-5555-4666-8777-888888888888',
+          projectId: 'proj-local-01',
+          environment: 'development',
+          sessionId: 'sess-demo-local-01',
+          sdkVersion: '1.0.0',
+          events: [
+            {
+              eventId: '55555555-6666-4777-8888-999999999999',
+              dependencyId: 'dep-nonexistent-99',
+              method: 'GET',
+              routeTemplate: '/test',
+              statusCode: 200,
+              durationMs: 10,
+              observedAt: new Date().toISOString(),
+              collectionPolicyVersion: 1
+            }
+          ]
+        }
+      });
+      expect(unknownDepRes.statusCode).toBe(404);
+      expect(unknownDepRes.json().error.code).toBe('DEPENDENCY_NOT_FOUND');
+    });
+
+    it('A29 returns SDK diagnostics with connectivity status', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+      const key = keyService.createKey('proj-local-01', 'development', 'SDK Key');
+
+      // 1. Initial diagnostics -> awaiting_observations
+      const res1 = await testApp.inject({
+        method: 'GET',
+        url: '/api/sdk/diagnostics',
+        headers: { Authorization: `Bearer ${key.apiKey}` }
+      });
+      expect(res1.statusCode).toBe(200);
+      const data1 = res1.json();
+      expect(data1.status).toBe('awaiting_observations');
+      expect(data1.acceptedCount).toBe(0);
+      expect(data1.projectId).toBe('proj-local-01');
+      expect(data1.environment).toBe('development');
+
+      // 2. Ingest one observation
+      await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          schemaVersion: '1',
+          batchId: '66666666-7777-4888-8999-000000000000',
+          projectId: 'proj-local-01',
+          environment: 'development',
+          sessionId: 'sess-demo-local-01',
+          sdkVersion: '1.0.0',
+          events: [
+            {
+              eventId: '77777777-8888-4999-8000-111111111111',
+              dependencyId: 'dep-proj-local-01-development-users',
+              method: 'GET',
+              routeTemplate: '/users/:id',
+              statusCode: 200,
+              durationMs: 12,
+              observedAt: new Date().toISOString(),
+              collectionPolicyVersion: 1
+            }
+          ]
+        }
+      });
+
+      // 3. Diagnostics after ingestion -> receiving
+      const res2 = await testApp.inject({
+        method: 'GET',
+        url: '/api/sdk/diagnostics',
+        headers: { Authorization: `Bearer ${key.apiKey}` }
+      });
+      expect(res2.statusCode).toBe(200);
+      const data2 = res2.json();
+      expect(data2.status).toBe('receiving');
+      expect(data2.acceptedCount).toBe(1);
+      expect(data2.lastIngestAt).toBeDefined();
+    });
+  });
 });
+
 
 
 

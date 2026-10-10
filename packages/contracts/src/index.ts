@@ -918,3 +918,36 @@ export const DependencyDetailResponseSchema = z.object({
   nextCursor: z.string().optional()
 });
 export type DependencyDetailResponse = z.infer<typeof DependencyDetailResponseSchema>;
+
+// Ticket 31: SDK Observation Ingestion & Diagnostics (A28, A29)
+
+// A28: Ingest Observations
+export const IngestObservationsFindingSchema = z.object({
+  id: z.string(),
+  evidenceStatus: z.enum(['confirmed', 'inferred', 'limited', 'unsupported'])
+});
+export type IngestObservationsFinding = z.infer<typeof IngestObservationsFindingSchema>;
+
+export const IngestObservationsResponseSchema = z.object({
+  batchId: z.string().uuid(),
+  accepted: z.number().int().nonnegative(),
+  duplicates: z.number().int().nonnegative(),
+  findings: z.array(IngestObservationsFindingSchema),
+  auditEventId: z.string()
+});
+export type IngestObservationsResponse = z.infer<typeof IngestObservationsResponseSchema>;
+
+// A29: SDK Diagnostics
+export const SdkDiagnosticsStatusSchema = z.enum(['awaiting_observations', 'receiving', 'stale']);
+export type SdkDiagnosticsStatus = z.infer<typeof SdkDiagnosticsStatusSchema>;
+
+export const SdkDiagnosticsResponseSchema = z.object({
+  projectId: z.string(),
+  environment: ProjectEnvironmentSchema,
+  sessionId: z.string(),
+  lastIngestAt: z.string().datetime().optional(),
+  acceptedCount: z.number().int().nonnegative(),
+  rejectionCount: z.number().int().nonnegative(),
+  status: SdkDiagnosticsStatusSchema
+});
+export type SdkDiagnosticsResponse = z.infer<typeof SdkDiagnosticsResponseSchema>;
