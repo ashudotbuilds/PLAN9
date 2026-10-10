@@ -149,4 +149,26 @@ Never include credentials or rewrite another contributor's history.
   - Ticket 28 (`ashudotbuilds`: "Create a scoped local project through operator onboarding") is now UNBLOCKED and eligible to start.
   - Ticket 02 (`saransh-sh`: "Capture a healthy baseline and trace workflow reads") remains blocked on Ticket 28.
 - **Log commit identifier:** `docs: record issue 1 main integration and closure in dev log`.
-- **Log publication:** Pending at entry creation; reported in final response.
+- **Log publication:** Confirmed pushed at `bcf08be`.
+
+## 2026-10-11 — Ticket 28: Create a scoped local project through operator onboarding
+
+- **Task:** Issue #28 ([P0] 28: Create a scoped local project through operator onboarding).
+- **Authenticated identity:** ashudotbuilds
+- **Status:** COMPLETED. Feature pushed to `origin/codex/issue-28-local-project-onboarding`.
+- **Scope & Governance:** PRD 13.1, 16.1; AT-SDK-01 / AT-SDK-03 operator boundary. Implemented loopback operator session bootstrap, HttpOnly session cookie, Origin header validation, scripted operator header support, 8-hour session expiry, rate limiting (5 attempts/min), idempotent project creation (Idempotency-Key 24-hr cache, 409 on conflict), 20-project cap, development/production environments, seeded inventory under stable project IDs, and guarded control-plane route scoping for A20, A21, A22, A23, A02, A14.
+- **Changes made:**
+  - `packages/contracts`: Added contracts for operator authentication (`OperatorSessionRequestSchema`, `OperatorSessionResponseSchema`), project management (`CreateProjectRequestSchema`, `ProjectSummarySchema`, `CreateProjectResponseSchema`, `ListProjectsResponseSchema`, `ProjectDetailResponseSchema`), and control-plane data (`DemoStateResponseSchema`, `ProviderSummarySchema`, `ListProvidersResponseSchema`).
+  - `apps/api`: Added `@fastify/cookie` dependency; implemented `OperatorAuthService` (timing-safe token verification, session tracking, rate limiting, loopback validation, origin check) and `ProjectService` (idempotent project creation, conflict detection, 20-project limit, seeded inventory, demo state projection); updated `apps/api/src/app.ts` with `/api/operator/session` (A20), `/api/projects` (A21), `/api/projects` (A22), `/api/projects/:projectId` (A23), `/api/demo/state` (A02), `/api/providers` (A14) protected by `requireOperatorAuth`.
+  - `apps/web`: Added operator login form (`api-client.ts` with `loginOperator`, `listProjects`, `createProject`, `getDemoState`), project creation input, active project and environment selector badges, and session status indicator.
+  - `.scratch/driftguard/issues/28-local-project-onboarding.md`: Completed acceptance criteria checklist and marked status completed.
+- **Verification:**
+  - `pnpm -r run build`: All 4 packages compiled cleanly.
+  - `pnpm -r run typecheck`: 0 TypeScript errors across all 4 packages.
+  - `vitest run`: 29 of 29 tests passed across all 4 suites (`@driftguard/contracts`, `@driftguard/mock-providers`, `@driftguard/api`, `@driftguard/web`).
+  - `node scripts/validate-planning.mjs`: All 41 tickets, 97 requirements, 37 API routes, and 17 SDK gates validated successfully.
+- **Branch:** `codex/issue-28-local-project-onboarding`.
+- **Feature commit:** `7d314a146760b86c78ac41a710582e87070976cd`.
+- **Confirmed push:** Confirmed push to `origin/codex/issue-28-local-project-onboarding`.
+- **Log commit identifier:** `docs: record issue 28 completion in dev log`.
+
