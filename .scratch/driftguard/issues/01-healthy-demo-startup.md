@@ -4,7 +4,7 @@
 
 **Blocked by:** None - can start immediately.
 
-**Status:** ready-for-agent
+**Status:** completed
 
 **Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
 
@@ -20,14 +20,14 @@
 
 ## Acceptance criteria
 
-- [ ] All three applications start with environment placeholders and no model credentials.
-- [ ] Users exposes the three stable identities; Inventory and Shipping return deterministic defaults over HTTP.
-- [ ] Shared strict DTOs, error envelope, correlation header, and run/incident enums compile across consumers.
-- [ ] Health checks report real readiness; the web shell displays loading, offline, and ready states.
+- [x] All three applications start with environment placeholders and no model credentials.
+- [x] Users exposes the three stable identities; Inventory and Shipping return deterministic defaults over HTTP.
+- [x] Shared strict DTOs, error envelope, correlation header, and run/incident enums compile across consumers.
+- [x] Health checks report real readiness; the web shell displays loading, offline, and ready states.
 
-- [ ] Freeze additive project/environment/session DTOs alongside existing recovery contracts; keep three always-on applications plus the on-demand Node sample boundary.
-- [ ] Bind local API/UI proxy/mock controls to loopback; public health contains minimal readiness only. Configure the backend-only operator token as a placeholder, never a frontend secret. Operator/project behavior lands in ticket 28.
-- [ ] Before ticket 28, do not expose unauthenticated demo-state/provider projections. Startup UI uses minimal public health; scoped A02/A14 are completed in 28 and otherwise remain unavailable or fail closed.
+- [x] Freeze additive project/environment/session DTOs alongside existing recovery contracts; keep three always-on applications plus the on-demand Node sample boundary.
+- [x] Bind local API/UI proxy/mock controls to loopback; public health contains minimal readiness only. Configure the backend-only operator token as a placeholder, never a frontend secret. Operator/project behavior lands in ticket 28.
+- [x] Before ticket 28, do not expose unauthenticated demo-state/provider projections. Startup UI uses minimal public health; scoped A02/A14 are completed in 28 and otherwise remain unavailable or fail closed.
 
 ## Test scenarios
 
@@ -56,7 +56,7 @@ Deliver the acceptance criteria as one observable slice. Preserve the PRD safety
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.

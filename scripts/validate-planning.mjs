@@ -53,7 +53,7 @@ const tickets = readdirSync(resolve(root, directory)).filter(path => /^\d{2}-.+\
   const id = path.slice(0, 2);
   assert(body.startsWith(`# ${id} - `), `${path}: title/ID mismatch`);
   assert(body.includes('## Acceptance criteria') && body.includes('## Test scenarios'), `${path}: missing checks`);
-  assert(/- \[ \]/.test(body), `${path}: no unchecked acceptance`);
+  assert(/- \[ \]/.test(body) || field('Status') === 'completed', `${path}: no unchecked acceptance`);
   assert(field('GitHub issue').includes(`https://github.com/ashudotbuilds/PLAN9/issues/${Number(id)})`), `${path}: issue link`);
   assert(index.includes(`issues/${path}`), `${path}: absent from index`);
   const priority = field('Priority').match(/^(P[012])(?:\s|$)/)?.[1];

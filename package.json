@@ -1,0 +1,24 @@
+{
+  "name": "driftguard-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx scripts/dev-runner.ts",
+    "build": "pnpm -r run build",
+    "test": "vitest run",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint",
+    "smoke": "tsx scripts/demo-smoke.ts",
+    "validate:planning": "node scripts/validate-planning.mjs"
+  },
+  "dependencies": {
+    "@driftguard/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
