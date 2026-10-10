@@ -4,7 +4,7 @@
 
 **Blocked by:** Ticket 01.
 
-**Status:** ready-for-agent (authoring status; verify blockers before execution)
+**Status:** completed
 
 **Priority:** P0
 
@@ -18,10 +18,10 @@
 
 ## Acceptance criteria
 
-- [ ] Implement the PRD loopback operator bootstrap, HttpOnly session, exact Origin guard, scripted operator header, session expiry, and safe login audit; ingestion credentials cannot substitute.
-- [ ] Create development/production environment records and labelled seeded inventory under stable project IDs; return safe project metadata only.
-- [ ] Bind every existing control-plane list/command/resource lookup to validated scope; public health remains minimal. Preserve exact recovery response.
-- [ ] Agree project/environment/session and ingestion DTOs additively with ticket 01; do not implement keys or SDK here.
+- [x] Implement the PRD loopback operator bootstrap, HttpOnly session, exact Origin guard, scripted operator header, session expiry, and safe login audit; ingestion credentials cannot substitute.
+- [x] Create development/production environment records and labelled seeded inventory under stable project IDs; return safe project metadata only.
+- [x] Bind every existing control-plane list/command/resource lookup to validated scope; public health remains minimal. Preserve exact recovery response.
+- [x] Agree project/environment/session and ingestion DTOs additively with ticket 01; do not implement keys or SDK here.
 
 ## Test scenarios
 
@@ -49,8 +49,8 @@ One ticket per implementation run; no universal discovery/interception, producti
 
 ## Completion evidence
 
-- [ ] Retain observable backend/test results, scope, provenance, and requirement IDs.
-- [ ] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
-- [ ] Preserve other owners' changes and explicitly review staged paths.
-- [ ] After authorized feature push, append and separately push its log entry.
-- [ ] Mark complete only when acceptance criteria and verified blockers pass.
+- [x] Retain observable backend/test results, scope, provenance, and requirement IDs.
+- [x] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
+- [x] Preserve other owners' changes and explicitly review staged paths.
+- [x] After authorized feature push, append and separately push its log entry.
+- [x] Mark complete only when acceptance criteria and verified blockers pass.

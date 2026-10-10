@@ -183,3 +183,90 @@ export const ObservationBatchV1Schema = z.object({
 });
 
 export type ObservationBatchV1 = z.infer<typeof ObservationBatchV1Schema>;
+
+// Operator & Project Headers & Cookies
+export const OPERATOR_TOKEN_HEADER = 'x-driftguard-operator-token';
+export const IDEMPOTENCY_KEY_HEADER = 'idempotency-key';
+export const OPERATOR_SESSION_COOKIE = 'dg_operator_session';
+
+// A20: Operator session
+export const OperatorSessionRequestSchema = z.object({
+  token: z.string().min(1).max(1024)
+});
+export type OperatorSessionRequest = z.infer<typeof OperatorSessionRequestSchema>;
+
+export const OperatorSessionResponseSchema = z.object({
+  expiresAt: z.string().datetime(),
+  auditEventId: z.string()
+});
+export type OperatorSessionResponse = z.infer<typeof OperatorSessionResponseSchema>;
+
+// A21: Projects
+export const CreateProjectRequestSchema = z.object({
+  name: z.string().min(1).max(80)
+});
+export type CreateProjectRequest = z.infer<typeof CreateProjectRequestSchema>;
+
+export const ProjectSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.string().datetime(),
+  environments: z.array(ProjectEnvironmentSchema)
+});
+export type ProjectSummary = z.infer<typeof ProjectSummarySchema>;
+
+export const CreateProjectResponseSchema = z.object({
+  project: ProjectSummarySchema,
+  auditEventId: z.string()
+});
+export type CreateProjectResponse = z.infer<typeof CreateProjectResponseSchema>;
+
+// A22: List Projects
+export const ListProjectsResponseSchema = z.object({
+  projects: z.array(ProjectSummarySchema)
+});
+export type ListProjectsResponse = z.infer<typeof ListProjectsResponseSchema>;
+
+// A23: Project Detail
+export const ProjectDetailResponseSchema = z.object({
+  project: ProjectSummarySchema,
+  environmentState: z.object({
+    environment: ProjectEnvironmentSchema,
+    activeSessionId: z.string(),
+    lastIngestAt: z.string().nullable()
+  }),
+  keyMetadata: z.array(z.unknown()),
+  collectionPolicy: z.record(z.string(), z.unknown())
+});
+export type ProjectDetailResponse = z.infer<typeof ProjectDetailResponseSchema>;
+
+// A02: Demo State
+export const DemoStateResponseSchema = z.object({
+  projectId: z.string(),
+  environment: ProjectEnvironmentSchema,
+  sessionId: z.string(),
+  status: z.string(),
+  providers: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      status: z.string()
+    })
+  )
+});
+export type DemoStateResponse = z.infer<typeof DemoStateResponseSchema>;
+
+// A14: Providers
+export const ProviderSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  baseUrl: z.string(),
+  status: z.string()
+});
+export type ProviderSummary = z.infer<typeof ProviderSummarySchema>;
+
+export const ListProvidersResponseSchema = z.object({
+  providers: z.array(ProviderSummarySchema)
+});
+export type ListProvidersResponse = z.infer<typeof ListProvidersResponseSchema>;
+

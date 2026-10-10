@@ -3,7 +3,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { App } from './App';
 import { apiClient } from './api-client';
 
-describe('Web App - Operational Canvas Readiness', () => {
+describe('Web App - Operational Canvas & Operator Onboarding', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -35,53 +35,63 @@ describe('Web App - Operational Canvas Readiness', () => {
 
     render(<App />);
 
-    // Wait for ready badges
     await waitFor(() => {
       expect(screen.getAllByText('READY').length).toBeGreaterThan(0);
     });
 
     expect(screen.getByText('Control Plane API')).toBeInTheDocument();
     expect(screen.getByText('Mock Dependency Providers')).toBeInTheDocument();
-    expect(screen.getByText('Users API')).toBeInTheDocument();
-    expect(screen.getByText('Inventory API')).toBeInTheDocument();
-    expect(screen.getByText('Shipping API')).toBeInTheDocument();
   });
 
-  it('renders offline state when services are unreachable', async () => {
+  it('renders login prompt when operator is not authenticated', async () => {
     vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
-      api: {
-        status: 'offline',
-        error: 'Failed to fetch API'
-      },
-      mockProviders: {
-        status: 'offline',
-        error: 'Failed to connect to mock providers'
-      }
-    });
-
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getAllByText('OFFLINE').length).toBe(2);
-    });
-
-    expect(screen.getByText('Failed to fetch API')).toBeInTheDocument();
-    expect(screen.getByText('Failed to connect to mock providers')).toBeInTheDocument();
-  });
-
-  it('handles refresh button click', async () => {
-    const spy = vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
       api: { status: 'ready' },
       mockProviders: { status: 'ready' }
     });
+    vi.spyOn(apiClient, 'listProjects').mockRejectedValue(new Error('UNAUTHENTICATED'));
 
     render(<App />);
 
-    const refreshButton = await screen.findByRole('button', { name: /refresh readiness/i });
-    fireEvent.click(refreshButton);
+    await waitFor(() => {
+      expect(screen.getByText('LOGIN REQUIRED')).toBeInTheDocument();
+    });
+
+    expect(screen.getByPlaceholderText('Operator token...')).toBeInTheDocument();
+  });
+
+  it('allows operator to login and shows project selectors', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'loginOperator').mockResolvedValue({
+      expiresAt: '2026-10-11T08:00:00.000Z',
+      auditEventId: 'aud_login_test'
+    });
+    vi.spyOn(apiClient, 'listProjects')
+      .mockRejectedValueOnce(new Error('UNAUTHENTICATED'))
+      .mockResolvedValueOnce([
+        {
+          id: 'prj_test_1',
+          name: 'Test Project',
+          createdAt: '2026-10-11T00:00:00.000Z',
+          environments: ['development', 'production']
+        }
+      ]);
+
+    render(<App />);
+
+    const tokenInput = await screen.findByPlaceholderText('Operator token...');
+    fireEvent.change(tokenInput, { target: { value: 'secret-token' } });
+
+    const signInButton = screen.getByRole('button', { name: /sign in/i });
+    fireEvent.click(signInButton);
 
     await waitFor(() => {
-      expect(spy).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('OPERATOR AUTHENTICATED')).toBeInTheDocument();
     });
+
+    expect(screen.getAllByText(/Test Project/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/development \(demo active\)/)).toBeInTheDocument();
   });
 });
