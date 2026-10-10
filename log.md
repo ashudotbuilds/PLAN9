@@ -307,5 +307,27 @@ Never include credentials or rewrite another contributor's history.
 - **Log commit identifier:** `docs: record issue 04 main integration and closure in dev log`.
 - **Log publication:** Confirmed pushed at `main`.
 
+## 2026-10-11 — Ticket 05: Propose a constrained compatible adapter
+
+- **Task:** Issue #5 ([P0] 05: Propose a constrained compatible adapter).
+- **Authenticated identity:** ashudotbuilds
+- **Status:** COMPLETED. Feature pushed to `origin/codex/issue-05-bounded-repair-proposal`.
+- **Scope & Governance:** PRD FR-REP-01, FR-REP-02, FR-REP-03, FR-REP-04, FR-REP-06, NFR-01, NFR-02, FR-LIN-01, FR-MON-01, NFR-21; sections 12.6, 13, 15, 22; endpoints `POST /api/incidents/:incidentId/propose-repair` (A10) and `GET /api/incidents/:incidentId` (A08). Implemented deterministic RepairModel synthesis that builds an evidence bundle from observed field-level drift, canonical contract mappings, and workflow invariants; proposes safe coalesce rule `[display_name, name] -> displayName` with source `deterministic_fallback` and 95% confidence; guarantees identity preservation (`id` preserved in canonical projection); provides adapter diff (`CanonicalUserAdapter.v1` -> `CanonicalUserAdapter.v2`), required validation gates (`shadow_validation_v1`, `workflow_replay_welcome_email`, `workflow_replay_customer_profile`), and explicit evidence references; implements `AdapterRuntime.apply` with safe prototype guard and support for old responses, renamed responses, and both fields; and mounted interactive proposal card in the web UI.
+- **Changes made:**
+  - `packages/contracts`: Added contracts for `RepairSourceSchema`, `RepairOpSchema`, `AdapterRuleSchema`, `AdapterPatchSchema`, `RepairProposalSchema`, `ProposeRepairRequestSchema`, `ProposeRepairResponseSchema`, and extended `IncidentDetailSchema` with `proposals`.
+  - `apps/api`: Implemented `IncidentService.proposeRepair` and `AdapterRuntime` in `apps/api/src/services/incident-service.ts`; mounted endpoint `POST /api/incidents/:incidentId/propose-repair` (A10) in `apps/api/src/app.ts`.
+  - `apps/web`: Added `apiClient.proposeRepair` in `apps/web/src/api-client.ts`; added proposal state, `handleProposeRepair`, and Constrained Compatible Adapter Proposal card in `apps/web/src/App.tsx`.
+  - `apps/api/tests/api.test.ts`: Added tests for proposing repair via A10, verifying `AdapterRuntime.apply` handling across old, new, both, and missing field scenarios, testing incident detail reflection, and verifying 404/422 error cases.
+  - `apps/web/src/App.test.tsx`: Added UI test for triggering repair proposal and asserting synthesized rules, diff, and checks.
+  - `.scratch/driftguard/issues/05-bounded-repair-proposal.md`: Completed acceptance criteria checklist and marked status as completed.
+- **Verification:**
+  - `pnpm -r run build`: All 4 packages compiled cleanly; Vite production bundle built successfully.
+  - `pnpm -r run typecheck`: 0 TypeScript errors across all 4 packages.
+  - `vitest run`: 47 of 47 tests passed across all 4 suites (`@driftguard/contracts`, `@driftguard/mock-providers`, `@driftguard/api`, `@driftguard/web`).
+  - `node scripts/validate-planning.mjs`: All 41 tickets, 97 requirements, 37 API routes, and 17 SDK gates validated successfully.
+- **Branch:** `codex/issue-05-bounded-repair-proposal`.
+- **Feature commit:** `37e85ce`.
+- **Confirmed push:** Confirmed push to `origin/codex/issue-05-bounded-repair-proposal`.
+
 
 
