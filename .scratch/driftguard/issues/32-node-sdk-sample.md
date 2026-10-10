@@ -4,7 +4,7 @@
 
 **Blocked by:** Ticket 31.
 
-**Status:** ready-for-agent (authoring status; verify blockers before execution)
+**Status:** completed
 
 **Priority:** P0
 
@@ -18,10 +18,10 @@
 
 ## Acceptance criteria
 
-- [ ] Implement the specified initialization/registerDependency/trackRequest/flush/diagnostics/shutdown public seam using native transport and shared contracts, with no detector/model dependency.
-- [ ] Default to metadata-only; derive status/duration/time from actual sample Users requests, never literal synthetic success counters.
-- [ ] Basic SDK network work is asynchronous and bounded from its first version; SDK absence/failure never changes provider responses or host workflow outcomes.
-- [ ] Document server-side key/endpoint/environment setup, explicit registration, reset re-registration, workspace import, and sample invocation without a paid API.
+- [x] Implement the specified initialization/registerDependency/trackRequest/flush/diagnostics/shutdown public seam using native transport and shared contracts, with no detector/model dependency.
+- [x] Default to metadata-only; derive status/duration/time from actual sample Users requests, never literal synthetic success counters.
+- [x] Basic SDK network work is asynchronous and bounded from its first version; SDK absence/failure never changes provider responses or host workflow outcomes.
+- [x] Document server-side key/endpoint/environment setup, explicit registration, reset re-registration, workspace import, and sample invocation without a paid API.
 
 ## Test scenarios
 
@@ -47,8 +47,8 @@ One ticket per implementation run; no universal discovery/interception, producti
 
 ## Completion evidence
 
-- [ ] Retain observable backend/test results, scope, provenance, and requirement IDs.
-- [ ] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
-- [ ] Preserve other owners' changes and explicitly review staged paths.
-- [ ] After authorized feature push, append and separately push its log entry.
-- [ ] Mark complete only when acceptance criteria and verified blockers pass.
+- [x] Retain observable backend/test results, scope, provenance, and requirement IDs.
+- [x] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
+- [x] Preserve other owners' changes and explicitly review staged paths.
+- [x] After authorized feature push, append and separately push its log entry.
+- [x] Mark complete only when acceptance criteria and verified blockers pass.
