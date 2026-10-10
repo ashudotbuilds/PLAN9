@@ -1532,6 +1532,63 @@ export class IncidentService {
       reason: 'SDK telemetry or customer-reported claims cannot prove calendar/business-day equivalence and cannot release the review hold. Semantic oracle verification is strictly deterministic and bound to HTTP canary fixtures.'
     };
   }
+  async resetDemo(
+    projectId: string,
+    environment: ProjectEnvironment,
+    sessionId: string
+  ): Promise<{ auditEventId: string }> {
+    // 1. Verify lease & ownership
+    const currentLease = this.baselineService.getLease();
+    if (
+      currentLease &&
+      (currentLease.projectId !== projectId || currentLease.environment !== environment)
+    ) {
+      const err = new Error(
+        `Cannot reset: demo environment is locked by project '${currentLease.projectId}' (${currentLease.environment})`
+      );
+      (err as any).statusCode = 409;
+      (err as any).code = 'DEMO_SCOPE_BUSY';
+      throw err;
+    }
+
+    // 2. Refuse if an action / recovery run is actively running in this scope
+    for (const run of this.recoveryRuns.values()) {
+      if (run.projectId === projectId && run.environment === environment && run.status === 'running') {
+        const err = new Error('Cannot reset demo while a recovery run is actively in progress.');
+        (err as any).statusCode = 409;
+        (err as any).code = 'DEMO_BUSY';
+        throw err;
+      }
+    }
+
+    // 3. Reset mock providers simulator to defaults over HTTP
+    try {
+      await this.fetchFn(`${this.mockProvidersBaseUrl}/__control/reset`, { method: 'POST' });
+    } catch {
+      try {
+        await this.fetchFn(`${this.mockProvidersBaseUrl}/scenarios/reset`, { method: 'POST' });
+      } catch {
+        // Fallback
+      }
+    }
+    this.activeScenarios.clear();
+
+    // 4. Archive/clear active incidents for this scope
+    for (const [id, inc] of this.incidents.entries()) {
+      if (inc.projectId === projectId && inc.environment === environment) {
+        this.incidents.delete(id);
+      }
+    }
+
+    const scopeKey = `${projectId}:${environment}`;
+    this.activeAdapters.delete(scopeKey);
+
+    // 5. Reset baseline and release lease
+    this.baselineService.resetSession(projectId, environment);
+
+    const auditEventId = `aud_reset_${randomUUID().slice(0, 8)}`;
+    return { auditEventId };
+  }
 }
 
 export class AdapterRuntime {
@@ -1573,4 +1630,5 @@ export class AdapterRuntime {
     return result;
   }
 }
+
 

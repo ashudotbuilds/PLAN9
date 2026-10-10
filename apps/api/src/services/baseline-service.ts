@@ -90,6 +90,12 @@ export class BaselineService {
     }
   }
 
+  resetSession(projectId: string, environment: ProjectEnvironment): void {
+    const key = `${projectId}:${environment}`;
+    this.baselines.delete(key);
+    this.releaseLease(projectId, environment);
+  }
+
   traceReads<T extends object>(target: T, onRead: (prop: string) => void, prefix = ''): T {
     return new Proxy(target, {
       get(t, prop, receiver) {

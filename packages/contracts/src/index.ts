@@ -401,6 +401,22 @@ export const CaptureBaselineResponseSchema = z.object({
 });
 export type CaptureBaselineResponse = z.infer<typeof CaptureBaselineResponseSchema>;
 
+// A04: Demo Reset
+export const ResetDemoRequestSchema = z.object({
+  projectId: z.string().min(1),
+  environment: ProjectEnvironmentSchema,
+  sessionId: z.string().min(1)
+});
+export type ResetDemoRequest = z.infer<typeof ResetDemoRequestSchema>;
+
+export const ResetDemoResponseSchema = z.object({
+  sessionId: z.string().min(1),
+  status: z.literal('awaiting_baseline'),
+  activeAdapterVersion: z.number().int().positive(),
+  auditEventId: z.string()
+});
+export type ResetDemoResponse = z.infer<typeof ResetDemoResponseSchema>;
+
 
 // A15: Workflow Replay
 export const ReplayWorkflowRequestSchema = z.object({

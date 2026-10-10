@@ -4,7 +4,7 @@
 
 **Blocked by:** [08 - Run recovery through one backend command](08-backend-recovery-run.md); [10 - Detect unchanged-schema shipping drift and hold repair](10-shipping-semantic-refusal.md); [31 - Ingest scoped SDK observations through the existing detector](31-sdk-observation-ingestion.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
 **Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
 
@@ -20,15 +20,15 @@
 
 ## Acceptance criteria
 
-- [ ] Restore provider defaults and adapter v1; clear active observations, incidents, patches, workflow runs, and recovery runs.
-- [ ] Archive the completed session and create a new awaiting_baseline session.
-- [ ] UI next action is Capture baseline; no stale baseline appears current.
-- [ ] Reset during a running action returns 409 DEMO_BUSY and makes no partial reset.
-- [ ] Repeat golden capture/recovery after reset with equivalent fingerprints and distinct session identifiers.
+- [x] Restore provider defaults and adapter v1; clear active observations, incidents, patches, workflow runs, and recovery runs.
+- [x] Archive the completed session and create a new awaiting_baseline session.
+- [x] UI next action is Capture baseline; no stale baseline appears current.
+- [x] Reset during a running action returns 409 DEMO_BUSY and makes no partial reset.
+- [x] Repeat golden capture/recovery after reset with equivalent fingerprints and distinct session identifiers.
 
-- [ ] Scoped owner reset preserves project identity, key lifecycle, registration identities, declared edges, and collection policy; archive session evidence/runtime reads/dedup and reset active counters/latest/baselines.
-- [ ] Serialize reset with ingestion writes; issue a new session ID and reject queued old-session batches as 409 STALE_SESSION instead of relabelling them.
-- [ ] Release the shared mock lease only after owner reset completes; non-owner reset returns DEMO_SCOPE_BUSY. Preserve lifetime counts separately and require SDK re-registration plus runtime lineage recapture.
+- [x] Scoped owner reset preserves project identity, key lifecycle, registration identities, declared edges, and collection policy; archive session evidence/runtime reads/dedup and reset active counters/latest/baselines.
+- [x] Serialize reset with ingestion writes; issue a new session ID and reject queued old-session batches as 409 STALE_SESSION instead of relabelling them.
+- [x] Release the shared mock lease only after owner reset completes; non-owner reset returns DEMO_SCOPE_BUSY. Preserve lifetime counts separately and require SDK re-registration plus runtime lineage recapture.
 
 ## Test scenarios
 
@@ -57,7 +57,7 @@ Deliver the acceptance criteria as one observable slice. Preserve the PRD safety
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.

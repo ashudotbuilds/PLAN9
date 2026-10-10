@@ -62,7 +62,9 @@ import {
   IngestObservationsResponse,
   IngestObservationsResponseSchema,
   SdkDiagnosticsResponse,
-  SdkDiagnosticsResponseSchema
+  SdkDiagnosticsResponseSchema,
+  ResetDemoResponse,
+  ResetDemoResponseSchema
 } from '@driftguard/contracts';
 
 
@@ -197,6 +199,32 @@ export class ApiClient {
 
     const data = await res.json();
     return DemoStateResponseSchema.parse(data);
+  }
+
+  // Demo Reset (A04)
+  async resetDemo(
+    projectId: string,
+    environment: ProjectEnvironment,
+    sessionId: string
+  ): Promise<ResetDemoResponse> {
+    const res = await fetch(`${this.apiBase}/demo/reset`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ projectId, environment, sessionId })
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      const err = new Error(errorJson.error?.message || `Failed to reset demo: ${res.status}`);
+      (err as any).code = errorJson.error?.code;
+      throw err;
+    }
+
+    const data = await res.json();
+    return ResetDemoResponseSchema.parse(data);
   }
 
   // Providers (A14)

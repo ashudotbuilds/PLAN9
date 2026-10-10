@@ -129,6 +129,10 @@ export function App() {
   const [registeringDep, setRegisteringDep] = useState(false);
   const [regDepSuccess, setRegDepSuccess] = useState<string | null>(null);
 
+  // Ticket 11: Demo Reset (A04)
+  const [resettingDemo, setResettingDemo] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
   const recordAudit = (id: string, action: string, summary: string, scope?: string) => {
     setAuditTimeline((prev) => [
       {
@@ -376,6 +380,42 @@ export function App() {
       }
     } finally {
       setCapturingBaseline(false);
+    }
+  };
+
+  const handleResetDemo = async () => {
+    if (!selectedProjectId) return;
+    setResettingDemo(true);
+    setResetError(null);
+    try {
+      const res = await apiClient.resetDemo(selectedProjectId, selectedEnvironment, 'sess_active');
+      setBaseline(null);
+      setReadEdges([]);
+      setIncidents([]);
+      setSelectedIncident(null);
+      setImpactAnalysis(null);
+      setRepairProposal(null);
+      setValidationRun(null);
+      setActiveAdapter(null);
+      setActiveRecoveryRun(null);
+      setActiveScenarios([]);
+      setWorkflowResults({});
+      recordAudit(
+        res.auditEventId,
+        'reset_demo',
+        `Reset demo session (${res.sessionId}): cleared active baseline, incidents, and adapters; awaiting baseline.`
+      );
+      await loadDemoState(selectedProjectId, selectedEnvironment);
+      await loadProviders();
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        setResetError(err.message);
+      }
+    } finally {
+      setResettingDemo(false);
     }
   };
 
@@ -810,11 +850,37 @@ export function App() {
           >
             {refreshing ? 'Checking...' : 'Refresh Readiness'}
           </button>
+
+          <button
+            onClick={handleResetDemo}
+            disabled={resettingDemo || !selectedProjectId}
+            className="px-3 py-1.5 text-xs font-medium bg-[#21262d] hover:bg-[#b62324]/20 hover:text-[#f85149] hover:border-[#da3633]/50 active:bg-[#da3633]/30 border border-[#30363d] rounded text-[#c9d1d9] transition-colors focus:outline-none focus:ring-2 focus:ring-[#f85149]"
+          >
+            {resettingDemo ? 'Resetting Demo...' : 'Reset Demo Session (A04)'}
+          </button>
         </div>
       </header>
 
       {/* Main Operational Canvas */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-6 space-y-6">
+        {resetError && (
+          <div
+            role="alert"
+            className="p-3 bg-[#da3633]/10 border border-[#da3633]/40 rounded text-[#f85149] text-xs font-mono flex items-center justify-between"
+          >
+            <div className="flex items-center space-x-2">
+              <span className="font-bold">RESET REFUSAL:</span>
+              <span>{resetError}</span>
+            </div>
+            <button
+              onClick={() => setResetError(null)}
+              className="text-[#8b949e] hover:text-[#c9d1d9] text-xs px-2 py-0.5 border border-[#30363d] rounded cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {sessionExpiredNotice && (
           <div
             role="alert"

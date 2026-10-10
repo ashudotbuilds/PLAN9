@@ -156,5 +156,11 @@ export function buildMockProvidersApp(options: MockProvidersOptions = {}): Fasti
     return { ok: true, activeScenarios: [] };
   });
 
+  // M05: Reset simulator scenarios to defaults
+  app.post('/__control/reset', async () => {
+    activeScenarios.clear();
+    return { ok: true, activeScenarios: [] };
+  });
+
   return app;
 }

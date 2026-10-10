@@ -207,9 +207,28 @@ export class ProjectService {
       ],
       baseline: baseline || undefined,
       readEdges: readEdges || undefined,
-      incidents: incidents || undefined,
-      activeScenarios: activeScenarios || undefined
+      incidents: incidents && incidents.length > 0 ? incidents : undefined,
+      activeScenarios: activeScenarios && activeScenarios.length > 0 ? activeScenarios : undefined
     };
+  }
+
+  resetProjectSession(projectId: string, environment: ProjectEnvironment): string {
+    let record = this.projects.get(projectId);
+    if (!record) {
+      record = Array.from(this.projects.values())[0];
+    }
+    const newSessionId = `sess_${randomUUID().slice(0, 8)}`;
+    if (record) {
+      if (!record.environmentState[environment]) {
+        record.environmentState[environment] = {
+          activeSessionId: newSessionId,
+          lastIngestAt: null
+        };
+      } else {
+        record.environmentState[environment].activeSessionId = newSessionId;
+      }
+    }
+    return newSessionId;
   }
 }
 

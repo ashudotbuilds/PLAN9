@@ -18,7 +18,8 @@ import {
   RollbackPatchRequestSchema,
   CreateIngestionKeyRequestSchema,
   RegisterDependencyRequestSchema,
-  ObservationBatchV1Schema
+  ObservationBatchV1Schema,
+  ResetDemoRequestSchema
 } from '@driftguard/contracts';
 import { randomUUID } from 'node:crypto';
 import { OperatorAuthService } from './services/operator-auth-service.js';
@@ -435,6 +436,46 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     }
 
     return state;
+  });
+
+  // A04: Reset Demo Session & Restore Defaults
+  app.post('/api/demo/reset', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const parsed = ResetDemoRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Invalid reset demo payload.',
+          details: parsed.error.format(),
+          correlationId
+        }
+      });
+    }
+
+    const { projectId, environment, sessionId } = parsed.data;
+
+    try {
+      const resetResult = await incidentService.resetDemo(projectId, environment, sessionId);
+      const newSessionId = projectService.resetProjectSession(projectId, environment);
+
+      return reply.status(200).send({
+        sessionId: newSessionId,
+        status: 'awaiting_baseline',
+        activeAdapterVersion: 1,
+        auditEventId: resetResult.auditEventId
+      });
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500;
+      return reply.status(statusCode).send({
+        error: {
+          code: err.code || 'INTERNAL_ERROR',
+          message: err.message,
+          details: {},
+          correlationId
+        }
+      });
+    }
   });
 
   // A14: List Providers

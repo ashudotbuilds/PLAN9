@@ -2769,7 +2769,169 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(data2.lastIngestAt).toBeDefined();
     });
   });
+
+  describe('Ticket 11: Reset Demo Session & Restore Defaults (A04, M05)', () => {
+    it('A04 requires operator authentication', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/demo/reset',
+        payload: {
+          projectId: 'prj_demo_default',
+          environment: 'development',
+          sessionId: 'sess-active'
+        }
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('A04 resets demo session, clears active baseline/incidents, restores provider defaults, and returns awaiting_baseline', async () => {
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      const { ProjectService } = await import('../src/services/project-service.js');
+
+      let activeScenarios: string[] = [];
+      const mockFetch = vi.fn(async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.includes('/scenarios/users.field-rename/inject')) {
+          activeScenarios.push('users.field-rename');
+          return { ok: true, json: async () => ({ ok: true, activeScenarios }) };
+        }
+        if (u.includes('/__control/reset') || u.includes('/scenarios/reset')) {
+          activeScenarios = [];
+          return { ok: true, json: async () => ({ ok: true, activeScenarios: [] }) };
+        }
+        if (u.includes('/users/')) {
+          const id = u.split('/users/')[1]?.split('?')[0] || 'u-123';
+          const nameMap: Record<string, string> = { 'u-123': 'Aarav', 'u-456': 'Meera', 'u-789': 'Kabir' };
+          const name = nameMap[id] || 'Aarav';
+          return {
+            ok: true,
+            json: async () => (activeScenarios.includes('users.field-rename') ? { id, display_name: name } : { id, name })
+          };
+        }
+        if (u.includes('/inventory/items')) {
+          return { ok: true, json: async () => ({ items: [{ sku: 'WIDGET-A', quantity: 15 }] }) };
+        }
+        if (u.includes('/shipping/estimate')) {
+          return { ok: true, json: async () => ({ estimated_delivery_date: '2026-10-18' }) };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      const projectService = new ProjectService();
+
+      const testApp = buildApiApp({
+        operatorToken: testToken,
+        baselineService,
+        incidentService,
+        projectService
+      });
+
+      // 1. Capture healthy baseline
+      await testApp.inject({
+        method: 'POST',
+        url: '/api/baselines/capture',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'proj-local-01', environment: 'development', sessionId: 'sess-init-01' }
+      });
+
+      // 2. Inject fault scenario and observe drift
+      await testApp.inject({
+        method: 'POST',
+        url: '/api/scenarios/users.field-rename/inject',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'proj-local-01', environment: 'development', sessionId: 'sess-init-01' }
+      });
+      await testApp.inject({
+        method: 'POST',
+        url: '/api/observations/run',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'proj-local-01', environment: 'development', sessionId: 'sess-init-01' }
+      });
+
+      // Verify active incidents exist before reset
+      const preStateRes = await testApp.inject({
+        method: 'GET',
+        url: '/api/demo/state?projectId=proj-local-01&environment=development',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      expect(preStateRes.json().incidents?.length).toBeGreaterThan(0);
+
+      // 3. Reset demo via A04
+      const resetRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/demo/reset',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'proj-local-01', environment: 'development', sessionId: 'sess-init-01' }
+      });
+
+      expect(resetRes.statusCode).toBe(200);
+      const resetData = resetRes.json();
+      expect(resetData.status).toBe('awaiting_baseline');
+      expect(resetData.activeAdapterVersion).toBe(1);
+      expect(resetData.sessionId).toMatch(/^sess_/);
+      expect(resetData.sessionId).not.toBe('sess-init-01');
+      expect(resetData.auditEventId).toBeDefined();
+
+      // 4. Verify demo state after reset
+      const postStateRes = await testApp.inject({
+        method: 'GET',
+        url: '/api/demo/state?projectId=proj-local-01&environment=development',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      const postState = postStateRes.json();
+      expect(postState.status).toBe('awaiting_baseline');
+      expect(postState.baseline).toBeUndefined();
+      expect(postState.incidents).toBeUndefined();
+      expect(postState.sessionId).toBe(resetData.sessionId);
+
+      // 5. Verify provider simulator reset called (activeScenarios cleared)
+      expect(activeScenarios).toHaveLength(0);
+
+      // 6. Recapture baseline succeeds cleanly with new session ID
+      const recaptureRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/baselines/capture',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'proj-local-01', environment: 'development', sessionId: resetData.sessionId }
+      });
+      expect(recaptureRes.statusCode).toBe(201);
+      expect(recaptureRes.json().baseline.version).toBe(1);
+    });
+
+    it('A04 returns 409 DEMO_SCOPE_BUSY when non-owner project attempts reset of locked scope', async () => {
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      const baselineService = new BaselineService();
+      // Lock scope with proj_A
+      baselineService.acquireLease('proj_A', 'development', 'sess_A');
+      const incidentService = new IncidentService(baselineService);
+
+      const testApp = buildApiApp({
+        operatorToken: testToken,
+        baselineService,
+        incidentService
+      });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/demo/reset',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'proj_B',
+          environment: 'development',
+          sessionId: 'sess_B'
+        }
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe('DEMO_SCOPE_BUSY');
+    });
+  });
 });
+
 
 
 
