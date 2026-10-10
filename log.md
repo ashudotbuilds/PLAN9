@@ -520,3 +520,29 @@ Never include credentials or rewrite another contributor's history.
   - `.scratch/driftguard/issues/08-backend-recovery-run.md`
   - `log.md`
 - **Next Step:** Merge `codex/issue-08-backend-recovery-run` to `main`, push `main`, close Issue #8 via GitHub API, update `log.md` on `main`, and advance to next ticket in topological order.
+
+---
+
+## Entry: 2026-10-11 - Ticket 08 Main Integration and Issue #8 Closure
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#8](https://github.com/ashudotbuilds/PLAN9/issues/8)
+- **Branch:** `main`
+- **Status:** PUSHED to origin/main; Issue #8 closed on GitHub.
+- **Scope:** Default-branch publication of Ticket 08 implementation, tests, and dev log.
+- **Integration:** Fast-forward merged `codex/issue-08-backend-recovery-run` (commits `b125509` and `62741fd`) into `main`. Pushed to `origin/main`. Closed GitHub Issue #8 (state: `closed`, reason: `completed`).
+- **Team Frontier Status:**
+  - Ticket 01 is COMPLETED and closed.
+  - Ticket 28 is COMPLETED and closed.
+  - Ticket 02 is COMPLETED and closed.
+  - Ticket 03 is COMPLETED and closed.
+  - Ticket 04 is COMPLETED and closed.
+  - Ticket 05 is COMPLETED and closed.
+  - Ticket 06 is COMPLETED and closed.
+  - Ticket 07 is COMPLETED and closed.
+  - Ticket 08 is COMPLETED and closed.
+  - Ticket 09 (`AnushkaBhardwaj15`: "[P0] 09: Operate and inspect recovery from the dashboard") is now UNBLOCKED and ready to start!
+  - Ticket 29 (`saransh-sh`: "[P0] 29: Issue, rotate, and revoke environment-scoped ingestion keys") is also UNBLOCKED.
+- **Log commit identifier:** `docs: record issue 08 main integration and closure in dev log`.
+- **Log publication:** Confirmed pushed at `main`.
