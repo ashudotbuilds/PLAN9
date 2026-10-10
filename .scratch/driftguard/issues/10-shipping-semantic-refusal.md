@@ -6,13 +6,17 @@
 
 **Status:** ready-for-agent
 
+**Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
+
 **Priority:** P0
 
-**Owner:** Detection engineer
+**Owner:** `ashudotbuilds`
+
+**GitHub issue:** [#10](https://github.com/ashudotbuilds/PLAN9/issues/10)
 
 **Applications/packages touched:** apps/mock-providers, apps/api, apps/web, packages/detector, packages/lineage.
 
-**PRD traceability:** FR-OBS-04, FR-DET-04, FR-SIM-03, FR-REP-05, FR-REP-08.
+**PRD traceability:** FR-OBS-04, FR-DET-04, FR-SIM-03, FR-REP-05, FR-REP-08, FR-MON-01, NFR-20. Sections 13.2–13.3, 19, 21.1 (AT-SDK-13) of [DRIFTGUARD_PRD.md](../../../DRIFTGUARD_PRD.md).
 
 ## Acceptance criteria
 
@@ -22,12 +26,18 @@
 - [ ] Set review_required with failing invariant and missing evidence; keep active adapter unchanged.
 - [ ] Review can resume only with new evidence or revised fully validated proposal; P0 offers no activation bypass.
 
+- [ ] Execute only the fixed approved Shipping canary in the operator's leased scope; retain oracle/fixture/source refs and distinguish semantic confirmation from incident state.
+- [ ] SDK status/duration or customer-reported field claims cannot prove calendar/business-day equivalence and cannot release the review hold.
+
 ## Test scenarios
 
 - Exact literal baseline/drift dates
 - Unchanged shape still yields behavioral finding
 - Shipping impact excludes user workflows
 - Recovery attempt remains held and cannot activate
+
+- Another scope's Shipping action returns DEMO_SCOPE_BUSY
+- Metadata-only SDK event cannot satisfy Shipping's semantic oracle
 
 Exercise public package seams with fixture-driven unit tests; use Fastify injection for applicable routes and a mocked API client for UI interactions. Show this ticket's observable result over the real provider HTTP boundary when relevant. Record only commands actually executed.
 

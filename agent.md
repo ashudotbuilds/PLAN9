@@ -16,7 +16,7 @@ Instructions for AI agents working in this repository.
 - **Safety demo:** `delivery_days` keeps its schema but changes from calendar to business days; hold for review.
 - **Build constraint:** 24-hour hackathon. Complete the P0 vertical slice before P1 work.
 - **Target stack:** pnpm TypeScript monorepo, React and Vite web app, Fastify control-plane API, separate Fastify mock-provider process, Zod contracts, Lowdb demo persistence, Vitest, and optional Playwright.
-- **Architecture:** three applications plus focused packages. See PRD sections 12 and 18.
+- **Architecture:** three service applications, a Node sample client, and focused packages including the thin manual SDK. See PRD sections 12 and 18.
 
 ## Non-negotiable product invariants
 
@@ -28,8 +28,8 @@ Instructions for AI agents working in this repository.
 6. **Escalate semantic uncertainty.** Ambiguous meaning changes enter `review_required`; they never auto-activate.
 7. **Protect side effects.** Shadow replay uses fixtures, stubs, or recorded intents for non-idempotent actions.
 8. **Report evidence honestly.** Distinguish observed evidence, simulator ground truth, model output, fallback output, and executed test results.
-9. **Keep raw evidence immutable.** Normalize and redact into derived records without rewriting the captured observation.
-10. **Keep the demo repeatable.** Reset starts a clean demo session while retaining the completed session audit archive.
+9. **Keep sanitized evidence immutable.** Redact before transport, logging, persistence or model submission; preserve the sanitized captured observation and derive normalization without rewriting it.
+10. **Keep the demo repeatable.** Scoped reset archives session evidence and fences stale SDK events while preserving project, key and inventory identity, as specified in PRD 13.2.
 
 ## Automatic recovery gate
 
@@ -43,6 +43,7 @@ apps/api            Fastify orchestration, workflows, incidents, and state trans
 apps/mock-providers Separate HTTP dependency simulator and scenario controls
 
 packages/contracts       Shared Zod schemas and DTOs
+packages/sdk             Node registration, manual telemetry, bounded delivery and diagnostics
 packages/observer        Capture, redaction, normalization, fingerprints
 packages/detector        Structural and behavioral comparison; no LLM dependency
 packages/lineage         Runtime field-read tracing and impact mapping
@@ -61,6 +62,7 @@ Dependency rules:
 - `apps/api` owns `RecoveryRun` orchestration. The web app starts a run and polls backend state; it never chains repair stages itself.
 - Route handlers validate and translate HTTP. Domain orchestration belongs in focused services or packages.
 - Repository interfaces exist only where both persistent and in-memory implementations are used.
+- `packages/sdk` uses shared public contracts and pure observer redaction only; it has no backend/model dependency and never executes repairs or alters host responses. The sample reports actual HTTP traffic. See PRD 12.5 for its public API and failure isolation.
 
 ## Execution workflow
 
@@ -91,6 +93,7 @@ Every behavior change ships with tests. Test public seams rather than private he
 | API | Fastify injection at HTTP contracts |
 | React | User-visible behavior with the API client mocked |
 | Golden recovery | Integration test across mock HTTP provider and control plane |
+| SDK and ingestion | Fake transport/clock failure isolation and scoped atomic acceptance at HTTP boundaries |
 
 Always cover applicable happy paths, malformed input, missing fields, duplicates, timeouts, provider errors, conflicting evidence, illegal state transitions, patch-hash mismatch, model unavailability, infrastructure failure, automatic-gate refusal, rollback, and reset repeatability.
 
@@ -103,12 +106,14 @@ Never mark work complete while required tests, typechecks, or builds are failing
 - Use Lowdb behind repositories for the demo; do not introduce PostgreSQL, Redis, Kafka, Kubernetes, or a service mesh.
 - Implement the deterministic repair fallback first. Add a live model only behind the provider-neutral `RepairModel` seam; credentials are optional.
 - Add an interface only at a real variation seam, such as `RepairModel` implementations or persistent and in-memory repositories.
-- Omit speculative stubs. Add P1 behavior only after the primary acceptance test passes.
+- Omit speculative stubs. Add P1 behavior only after both PRD section 21's original acceptance test and all section 21.1 connected SDK gates pass.
+- P0 provides explicit Node registration/manual telemetry. Client instrumentation and polling/import are P1; production proxy/gateway interception and broad discovery are P2 (PRD 13.3–13.4).
 
 ## Frontend rules
 
 - Build one evidence-first operational canvas: dependency rail, incident workspace, three-column impact trace, repair lab, and audit timeline.
 - All HTTP goes through the frontend API client.
+- Include project/environment onboarding, one-time key display and inventory/ingestion status in the existing canvas. Follow PRD 13.1/17 for operator sessions and secret handling; keep credentials out of frontend configuration, persistent browser storage and logs.
 - TanStack Query owns server state if introduced; local state owns transient UI only.
 - The backend is authoritative for incidents and recovery runs. The UI may offer guided stage actions and a single safe-recovery action, but it never orchestrates stages locally.
 - Show the source of every proposal (`live_model` or `deterministic_fallback`).
@@ -125,6 +130,9 @@ Never mark work complete while required tests, typechecks, or builds are failing
 - Reject unknown DSL operations and unknown source or canonical paths.
 - Activation requires a passing validation result for the exact patch hash.
 - Infrastructure failures fail the `RecoveryRun` without inventing an incident transition.
+- For projects/keys/ingestion, read PRD 12.5–13.3 and 16.1 before coding. Keep operator authentication separate from SDK bearer ingestion; persist key digests only, return plaintext once after persistence, and omit plaintext/digests from metadata and audit DTOs.
+- Derive ingestion scope from the active key; validate recorded resource scope and active session. Preserve PRD 13.2's shared demo lease, archive/reset behavior and session fencing; registration does not authorize arbitrary origin fetching.
+- Validate/redact whole batches before a serialized atomic store update of dedup, evidence, latest, findings and counters. SDK observations are untrusted source evidence, never automatic baseline promotion or substitutes for FR-REP-07 controlled HTTP/workflow gates. Keep declared/inferred graph edges separate from proven field reads.
 
 ## Domain language
 
@@ -132,7 +140,7 @@ Use these terms consistently:
 
 | Term | Meaning |
 |---|---|
-| Observation | Raw evidence from one provider request and response |
+| Observation | Immutable sanitized evidence from one provider request and response, with scope and source |
 | Behavioral twin | Versioned known-good fingerprint, examples, probes, and invariants for an endpoint |
 | Finding | One detected structural or behavioral difference |
 | Incident | Lifecycle record grouping related findings and recovery work |

@@ -6,13 +6,17 @@
 
 **Status:** deferred - scope definition required
 
+**Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
+
 **Priority:** P2 - outside the 24-hour demo
 
-**Owner:** Integration lead
+**Owner:** `chandrabhan-kushwaha`
+
+**GitHub issue:** [#25](https://github.com/ashudotbuilds/PLAN9/issues/25)
 
 **Applications/packages touched:** apps/api, packages/validation, packages/repair.
 
-**PRD traceability:** Sections 8 (P2) and 28 (future direction); no approved P0/P1 requirement IDs..
+**PRD traceability:** NFR-23. Sections 8 (P2), 13.4, 22, 28 of [DRIFTGUARD_PRD.md](../../../DRIFTGUARD_PRD.md).
 
 ## Acceptance criteria
 
@@ -21,11 +25,15 @@
 - [ ] Bind canary, approval, and activation to immutable patch/evidence versions.
 - [ ] Rollback on health regression; preserve audit and prior active version.
 
+- [ ] Production release requires durable tenant/operator authorization, TLS, permitted egress and retention/deletion design before traffic rollout; passing the local P0 demo is insufficient.
+
 ## Test scenarios
 
 - Stale approval/hash
 - Canary failure and rollback
 - Timeout and partial rollout
+
+- Production gate refusal when deployment security prerequisites absent
 
 Exercise public package seams with fixture-driven unit tests; use Fastify injection for applicable routes and a mocked API client for UI interactions. Show this ticket's observable result over the real provider HTTP boundary when relevant. Record only commands actually executed.
 
@@ -35,7 +43,7 @@ No additional approved API route. Define the required contract within this defer
 
 ## Scope boundary
 
-This is a future feature brief, not an executable hackathon promise. First settle provider scope, public contracts, policy, resource budgets, and independent validation data; then split implementation if it exceeds one context window.
+This is a future feature brief, not an executable hackathon promise. Ticket 13 gates it on complete recovery plus connected SDK P0 acceptance; production release prerequisites remain separate. First settle provider scope, public contracts, policy, resource budgets, and independent validation data; then split implementation if it exceeds one context window.
 
 ## Completion evidence
 

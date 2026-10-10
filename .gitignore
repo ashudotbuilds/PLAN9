@@ -25,3 +25,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Local agent runtime artifacts (retain locally, exclude from publication)
+.claude-flow/
+agentdb.rvf
+agentdb.rvf.lock
+ruvector.db
+

@@ -6,7 +6,7 @@ alwaysApply: false
 
 # DriftGuard Backend
 
-Read `DRIFTGUARD_PRD.md` sections 12, 15, 16, and 18.
+Read `DRIFTGUARD_PRD.md` sections 12–13, 15–16, and 18; sections 12.5–13.3 and 16.1 define SDK/project authentication, scope and ingestion bounds.
 
 - `apps/api` orchestrates observations, incidents, workflows, proposals, validation, activation, and audit.
 - `apps/mock-providers` exposes HTTP behavior and scenario controls. Detector code may observe its HTTP responses but must never read its scenario state.
@@ -21,6 +21,12 @@ Read `DRIFTGUARD_PRD.md` sections 12, 15, 16, and 18.
 - Semantic, conflicting, high-risk, or insufficient evidence enters `review_required` and cannot auto-activate.
 - Shadow replay stubs non-idempotent side effects.
 - Redact secrets before persistence or model submission.
+- Redact before transport/logging too; persisted observations are immutable sanitized evidence, with normalization stored separately.
+- Keep operator session/Origin/script guards separate from ingestion bearer keys. Persist key digests only; plaintext is one-time issuance after successful persistence and never metadata/audit output (PRD 13.1).
+- Resolve project/environment from the key, fence SDK events to the active session, and resolve domain IDs within recorded scope. Apply the shared mock lease and archive/reset invariants in PRD 13.2.
+- Validate/redact batches completely before a serialized atomic update of delivery identity, evidence, latest, findings and counters. Use PRD 16.1's dedup/conflict/error contract; a failed store write leaves no partial acceptance.
+- SDK registration/manual observations never promote baselines, fetch arbitrary registered origins, prove runtime field reads or replace controlled evidence required by FR-REP-07. Preserve source/policy/context and graph provenance (PRD 12.6/13.3).
+- `packages/sdk` is a thin manual Node client with shared contracts/pure redaction only; no repair execution or backend/model imports. Implement bounds/failure isolation from PRD 12.5. Instrumentation/polling/import are P1; proxy interception is P2.
 
 Recovery is operator-triggered with `POST /api/incidents/:id/recover`, but backend-orchestrated. Persist a `RecoveryRun`, return `202`, then run impact, proposal, validation, activation, and replay on the server. React may poll `GET /api/recovery-runs/:recoveryRunId`; it never sequences stages.
 
@@ -29,3 +35,4 @@ Use `queued | running | succeeded | failed` for run status and `impact | proposi
 Auto-activation requires the complete conjunctive policy in PRD `FR-REP-07`; review follows `FR-REP-08`. If post-activation replay fails, roll back to the recorded parent adapter, retain the failed evidence, and mark the incident `rolled_back`. Infrastructure failure fails only the `RecoveryRun`; it does not invent an incident transition.
 
 Tests use fixture-driven package tests, Fastify injection for routes, and the real mock-provider HTTP boundary for the golden integration flow.
+The P0 release requires both PRD 21 and 21.1, including SDK/auth/privacy/session/atomicity tests; original recovery acceptance alone does not complete the connected product.

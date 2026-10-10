@@ -6,16 +6,20 @@ alwaysApply: false
 
 # DriftGuard React Frontend
 
-Read `DRIFTGUARD_PRD.md` section 17.
+Read `DRIFTGUARD_PRD.md` sections 13.1, 16 and 17 for operator authentication, scoped API contracts and the connected canvas.
 
 - Build one evidence-first operational canvas: dependency rail, incident workspace, three-column impact trace, repair lab, and audit timeline.
 - All HTTP goes through `src/lib/api-client.ts` or its eventual focused replacement.
+- Add project/environment onboarding, one-time ingestion-key display, dependency inventory and acknowledged ingestion status within this canvas. Key metadata comes from project detail; no parallel key-list API.
+- Operator authentication uses the server-issued HttpOnly session and configured Origin guard. Keep operator tokens and ingestion keys out of frontend configuration, persistent browser storage, analytics and logs; clear one-time secrets when dismissed.
+- Select validated project/environment and send the active session on scoped capture/run/inject/reset/replay commands. Use server scope/conflict reasons; reset fences old-session telemetry and requires fresh registration.
 - Components render backend state and emit user intent. They never decide incident transitions, validation success, activation eligibility, or recovery.
 - Starting recovery means calling `POST /api/incidents/:id/recover`, accepting `202`, and polling `GET /api/recovery-runs/:recoveryRunId`. React never sequences recovery stages.
 - Render the server's run status and current stage (`impact`, `proposing`, `validating`, `activating`, `replaying`, or `rolling_back`) without inferring progress that was not reported.
 - Use shared contracts from `packages/contracts`; do not invent parallel response types.
 - Use server state tooling only for server state and local state for transient UI.
 - Display real backend evidence and executed check results. Label `live_model` and `deterministic_fallback` accurately.
+- Show SDK connectivity separately from dependency health. Counts/last seen reflect acknowledged backend evidence; seeded/declared inventory is not observed traffic. Distinguish declared/inferred graph links from runtime field-read evidence and metadata-only limitations.
 - Disable illegal actions with a reason derived from the backend state machine.
 - Include loading, empty, error, retry, review-required, rollback, and reset states.
 - Preserve keyboard access, visible focus, readable contrast, and reduced-motion behavior.
@@ -24,3 +28,4 @@ Read `DRIFTGUARD_PRD.md` section 17.
 - Motion must explain a user-triggered action or lifecycle transition; avoid ambient and infinite animation.
 
 Colocate component tests, mock the API client in unit tests, assert user-visible behavior, and run `saransh_custom_antislop` before UI completion.
+Connected demo release requires both PRD 21 and 21.1; test onboarding/auth errors, one-time key handling, scoped inventory and truthful ingestion states alongside recovery.

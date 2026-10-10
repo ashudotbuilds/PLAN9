@@ -6,13 +6,17 @@
 
 **Status:** ready-for-agent
 
+**Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
+
 **Priority:** P0
 
-**Owner:** Integration lead
+**Owner:** `ashudotbuilds`
+
+**GitHub issue:** [#8](https://github.com/ashudotbuilds/PLAN9/issues/8)
 
 **Applications/packages touched:** apps/api, packages/contracts, packages/repair, packages/validation.
 
-**PRD traceability:** FR-REC-01, FR-REC-02, FR-REC-03, FR-REC-04, FR-VAL-09, NFR-17.
+**PRD traceability:** FR-REC-01, FR-REC-02, FR-REC-03, FR-REC-04, FR-VAL-09, NFR-17, NFR-20. Sections 13, 13.1–13.2, 16 of [DRIFTGUARD_PRD.md](../../../DRIFTGUARD_PRD.md).
 
 ## Acceptance criteria
 
@@ -23,12 +27,18 @@
 - [ ] Successful restoration after replay failure ends run failed at rolling_back and incident rolled_back.
 - [ ] Guided actions share the same services, guards, and audit events; prevent conflicting mutations during an active run.
 
+- [ ] Recover and poll require operator context; resolve incident/run IDs to recorded project/environment/session, reject supplied scope mismatch, and require the owning demo lease for execution.
+- [ ] SDK bearer keys cannot start recovery, invoke guided stages, or administer keys. Preserve the exact asynchronous 202 response and separate run/incident truth.
+
 ## Test scenarios
 
 - Poll status and timestamps throughout successful execution
 - Concurrent recovery, stage failure, infrastructure failure
 - Review hold, invalid proposal, automatic rollback
 - Guided and automatic paths have equivalent safety results
+
+- Ingestion key and foreign-scope incident/run are refused without run creation
+- Second scope cannot recover against the first scope's changed mocks
 
 Exercise public package seams with fixture-driven unit tests; use Fastify injection for applicable routes and a mocked API client for UI interactions. Show this ticket's observable result over the real provider HTTP boundary when relevant. Record only commands actually executed.
 

@@ -6,13 +6,17 @@
 
 **Status:** ready-for-agent
 
+**Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
+
 **Priority:** P1 - optional after P0 acceptance is stable
 
-**Owner:** Repair and safety engineer
+**Owner:** `saransh-sh`
+
+**GitHub issue:** [#14](https://github.com/ashudotbuilds/PLAN9/issues/14)
 
 **Applications/packages touched:** packages/repair, apps/api, apps/web.
 
-**PRD traceability:** FR-REP-02, FR-REP-04, FR-REP-06, NFR-07, NFR-08.
+**PRD traceability:** FR-REP-02, FR-REP-04, FR-REP-06, NFR-07, NFR-08, FR-MON-01, NFR-21. Sections 12.6, 13, 22 of [DRIFTGUARD_PRD.md](../../../DRIFTGUARD_PRD.md).
 
 ## Acceptance criteria
 
@@ -22,11 +26,16 @@
 - [ ] Malformed/unsupported output is rejected; timeout is recorded and only the supported rename scenario can use fallback.
 - [ ] Live proposals undergo the identical FR-REP-07/08 and immutable-hash checks.
 
+- [ ] Preserve scoped source/policy/context and evidence limitations in minimal model input; omit project keys, operator tokens, private auth data, and arbitrary environment values.
+
 ## Test scenarios
 
 - Missing key, timeout, malformed JSON, forbidden operation
 - Prompt/data content cannot execute code
 - Live source label and supported fallback transition
+
+- SDK customer claims cannot override controlled proof or policy
+- Model prompt capture contains no secrets
 
 Exercise public package seams with fixture-driven unit tests; use Fastify injection for applicable routes and a mocked API client for UI interactions. Show this ticket's observable result over the real provider HTTP boundary when relevant. Record only commands actually executed.
 
@@ -37,7 +46,7 @@ Exercise public package seams with fixture-driven unit tests; use Fastify inject
 
 ## Scope boundary
 
-Do not start until the primary P0 acceptance test is stable. Keep this extension optional for the judge demo, and publish any required schema or policy extension before implementing it.
+Do not start until ticket 13 verifies both the original section 21 recovery test and all connected SDK gates in section 21.1, with remaining time before the hour-19 freeze. Keep this extension optional for the judge demo, and publish any required schema or policy extension before implementing it.
 
 ## Completion evidence
 
