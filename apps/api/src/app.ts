@@ -74,12 +74,30 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     reply.header(CORRELATION_ID_HEADER, correlationId);
   });
 
+  const unauthenticatedFailureLog: Array<{ timestamp: string; ip: string; path: string; reason: string }> = [];
+  const MAX_AUTH_FAILURES = 100;
+  const recordAuthFailure = (ip: string, path: string, reason: string) => {
+    if (unauthenticatedFailureLog.length >= MAX_AUTH_FAILURES) {
+      unauthenticatedFailureLog.shift();
+    }
+    unauthenticatedFailureLog.push({ timestamp: new Date().toISOString(), ip, path, reason });
+  };
+
   // Custom Error Handler returning shared error envelope
   app.setErrorHandler((error, request, reply) => {
     const err = error as { statusCode?: number; code?: string; message?: string };
     const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || `corr_${randomUUID().slice(0, 8)}`;
-    const statusCode = err.statusCode || 500;
-    const code = err.code || (statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_SERVER_ERROR');
+    let statusCode = err.statusCode || 500;
+    let code = err.code || (statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_SERVER_ERROR');
+
+    if (code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
+      code = 'PAYLOAD_TOO_LARGE';
+      statusCode = 413;
+    }
+
+    if (statusCode === 429 && !reply.getHeader('retry-after')) {
+      reply.header('retry-after', '60');
+    }
 
     reply.status(statusCode).send({
       error: {
@@ -107,6 +125,7 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
   // Helper auth check middleware
   const requireOperatorAuth = async (request: FastifyRequest, reply: FastifyReply) => {
     if (!authService.isAuthenticated(request)) {
+      recordAuthFailure(request.ip || '127.0.0.1', request.url, 'UNAUTHENTICATED_OPERATOR');
       const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
       reply.status(401).send({
         error: {
@@ -281,6 +300,7 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
     const authHeader = request.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      recordAuthFailure(request.ip || '127.0.0.1', request.url, 'MISSING_BEARER_AUTH');
       return reply.status(401).send({
         error: {
           code: 'UNAUTHORIZED',
@@ -305,6 +325,7 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     );
 
     if (!verification.valid) {
+      recordAuthFailure(request.ip || '127.0.0.1', request.url, verification.code || 'INVALID_KEY');
       const statusCode = verification.code === 'SCOPE_FORBIDDEN' ? 403 : 401;
       return reply.status(statusCode).send({
         error: {
@@ -887,6 +908,9 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
         return reply.status(200).send(result);
       } catch (err: any) {
         const statusCode = err.statusCode || 500;
+        if (statusCode === 429) {
+          reply.header('retry-after', '60');
+        }
         return reply.status(statusCode).send({
           error: {
             code: err.code || 'INTERNAL_ERROR',

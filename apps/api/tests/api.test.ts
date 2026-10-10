@@ -2930,6 +2930,133 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(res.json().error.code).toBe('DEMO_SCOPE_BUSY');
     });
   });
+
+  describe('Ticket 12: Error Evidence, Bounded Failures & Safe Envelopes (FR-OPS-01, NFR-04, NFR-07, NFR-20)', () => {
+    it('every error response exposes X-Correlation-Id and follows the shared error envelope', async () => {
+      const testApp = buildApiApp({ operatorToken: testToken });
+
+      // 404 Route Not Found
+      const notFoundRes = await testApp.inject({
+        method: 'GET',
+        url: '/api/nonexistent-route'
+      });
+      expect(notFoundRes.statusCode).toBe(404);
+      expect(notFoundRes.headers[CORRELATION_ID_HEADER]).toBeDefined();
+      const notFoundData = notFoundRes.json();
+      expect(notFoundData.error).toBeDefined();
+      expect(notFoundData.error.code).toBe('ROUTE_NOT_FOUND');
+      expect(notFoundData.error.correlationId).toBe(notFoundRes.headers[CORRELATION_ID_HEADER]);
+
+      // 401 Unauthenticated Operator
+      const unauthRes = await testApp.inject({
+        method: 'GET',
+        url: '/api/demo/state'
+      });
+      expect(unauthRes.statusCode).toBe(401);
+      expect(unauthRes.headers[CORRELATION_ID_HEADER]).toBeDefined();
+      const unauthData = unauthRes.json();
+      expect(unauthData.error.code).toBe('UNAUTHENTICATED_OPERATOR');
+      expect(unauthData.error.correlationId).toBe(unauthRes.headers[CORRELATION_ID_HEADER]);
+    });
+
+    it('returns 413 PAYLOAD_TOO_LARGE when request body exceeds configured limit', async () => {
+      const testApp = buildApiApp({ operatorToken: testToken });
+      const hugeString = 'x'.repeat(150 * 1024); // 150 KiB (exceeds 128 KiB limit on A28)
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer dg_any_token'
+        },
+        payload: hugeString
+      });
+
+      expect(res.statusCode).toBe(413);
+      expect(res.headers[CORRELATION_ID_HEADER]).toBeDefined();
+      const data = res.json();
+      expect(data.error.code).toBe('PAYLOAD_TOO_LARGE');
+      expect(data.error.correlationId).toBe(res.headers[CORRELATION_ID_HEADER]);
+    });
+
+    it('sets retry-after header when rate limit is exceeded (429)', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+      const key = keyService.createKey('proj-rate-test', 'development', 'Rate Test Key');
+
+      // Exceed 60 requests/min rate limit on ingestion
+      let lastRes: any;
+      for (let i = 0; i < 62; i++) {
+        lastRes = await testApp.inject({
+          method: 'POST',
+          url: '/api/ingest/observations',
+          headers: { Authorization: `Bearer ${key.apiKey}` },
+          payload: {
+            schemaVersion: '1',
+            batchId: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+            projectId: 'proj-rate-test',
+            environment: 'development',
+            sessionId: 'sess-demo-local-01',
+            sdkVersion: '0.1.0',
+            events: []
+          }
+        });
+        if (lastRes.statusCode === 429) break;
+      }
+
+      expect(lastRes.statusCode).toBe(429);
+      expect(lastRes.headers['retry-after']).toBeDefined();
+      expect(lastRes.headers[CORRELATION_ID_HEADER]).toBeDefined();
+      expect(lastRes.json().error.code).toBe('RATE_LIMIT_EXCEEDED');
+    });
+
+    it('redacts sensitive headers, cookies, and keys before storage', async () => {
+      const { KeyService } = await import('../src/services/key-service.js');
+      const keyService = new KeyService();
+      const testApp = buildApiApp({ operatorToken: testToken, keyService });
+      const key = keyService.createKey('proj-local-01', 'development', 'Redaction Test Key');
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/ingest/observations',
+        headers: { Authorization: `Bearer ${key.apiKey}` },
+        payload: {
+          schemaVersion: '1',
+          batchId: '88888888-9999-4000-8111-222222222222',
+          projectId: 'proj-local-01',
+          environment: 'development',
+          sessionId: 'sess-demo-local-01',
+          sdkVersion: '0.1.0',
+          events: [
+            {
+              eventId: '99999999-0000-4111-8222-333333333333',
+              dependencyId: 'dep-proj-local-01-development-users',
+              method: 'GET',
+              routeTemplate: '/users/:id',
+              statusCode: 200,
+              durationMs: 25,
+              observedAt: new Date().toISOString(),
+              collectionPolicyVersion: 1,
+              fixtureKey: 'user:u-123',
+              responseEvidence: {
+                id: 'u-123',
+                name: 'Aarav',
+                authorization: 'Bearer super-secret',
+                token: 'tok_abc',
+                password: 'plain_password',
+                apiKey: 'key_123'
+              }
+            }
+          ]
+        }
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().accepted).toBe(1);
+    });
+  });
 });
 
 

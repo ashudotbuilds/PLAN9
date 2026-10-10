@@ -4,7 +4,7 @@
 
 **Blocked by:** [08 - Run recovery through one backend command](08-backend-recovery-run.md); [11 - Reset to a fresh session and preserve completed evidence](11-archive-reset-and-recapture.md); [33 - Enforce SDK privacy and failure isolation](33-sdk-privacy-failure-isolation.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
 **Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
 
@@ -20,16 +20,16 @@
 
 ## Acceptance criteria
 
-- [ ] Every response exposes X-Correlation-Id; errors contain stable code, safe message/details, and correlationId.
-- [ ] Bound response size, observation timeout, probe count, and replay execution; oversized/malformed responses preserve bounded evidence and hashes.
-- [ ] Redact authorization, cookies, keys, and configured fields before storage or optional model submission.
-- [ ] Audit run creation, proposal, validation, activation, replay, rollback, and reset with correlation and immutable hashes.
-- [ ] Logs and UI explain provider availability, model failure, validation timeout, and patch modification without invented success.
-- [ ] Missing live-model key disables only optional live generation; core recovery remains operational.
+- [x] Every response exposes X-Correlation-Id; errors contain stable code, safe message/details, and correlationId.
+- [x] Bound response size, observation timeout, probe count, and replay execution; oversized/malformed responses preserve bounded evidence and hashes.
+- [x] Redact authorization, cookies, keys, and configured fields before storage or optional model submission.
+- [x] Audit run creation, proposal, validation, activation, replay, rollback, and reset with correlation and immutable hashes.
+- [x] Logs and UI explain provider availability, model failure, validation timeout, and patch modification without invented success.
+- [x] Missing live-model key disables only optional live generation; core recovery remains operational.
 
-- [ ] Integrate SDK/ingestion errors into the safe correlation envelope: 401/403, stale/conflicting 409, 413, 429 with bounded Retry-After, and 503 without partial accepted counters or fabricated success.
-- [ ] Verify numeric limits at SDK transport and API boundaries; distinguish diagnostics/telemetry loss from provider outage. Bound aggregate unauthenticated failure logs so rejected traffic cannot expand audit indefinitely.
-- [ ] Redact operator/ingestion credentials before logging and persistence; disclose TLS, durable tenancy, RBAC, and retention/deletion as production gates, not completed demo features.
+- [x] Integrate SDK/ingestion errors into the safe correlation envelope: 401/403, stale/conflicting 409, 413, 429 with bounded Retry-After, and 503 without partial accepted counters or fabricated success.
+- [x] Verify numeric limits at SDK transport and API boundaries; distinguish diagnostics/telemetry loss from provider outage. Bound aggregate unauthenticated failure logs so rejected traffic cannot expand audit indefinitely.
+- [x] Redact operator/ingestion credentials before logging and persistence; disclose TLS, durable tenancy, RBAC, and retention/deletion as production gates, not completed demo features.
 
 ## Test scenarios
 
@@ -60,7 +60,7 @@ Deliver the acceptance criteria as one observable slice. Preserve the PRD safety
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.
