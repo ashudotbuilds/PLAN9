@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { apiClient, SystemReadiness } from './api-client';
-import { ProjectSummary, ProjectEnvironment } from '@driftguard/contracts';
+import {
+  ProjectSummary,
+  ProjectEnvironment,
+  BaselineSummary,
+  DependencyEdge,
+  ReplayWorkflowResponse
+} from '@driftguard/contracts';
 
 export function App() {
   const [readiness, setReadiness] = useState<SystemReadiness>({
@@ -22,6 +28,14 @@ export function App() {
   const [creatingProject, setCreatingProject] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
 
+  // Ticket 02: Baseline & Workflow Lineage
+  const [baseline, setBaseline] = useState<BaselineSummary | null>(null);
+  const [readEdges, setReadEdges] = useState<DependencyEdge[]>([]);
+  const [capturingBaseline, setCapturingBaseline] = useState(false);
+  const [baselineError, setBaselineError] = useState<string | null>(null);
+  const [workflowResults, setWorkflowResults] = useState<Record<string, ReplayWorkflowResponse>>({});
+  const [replayingWorkflow, setReplayingWorkflow] = useState<string | null>(null);
+
   const fetchStatus = async () => {
     setRefreshing(true);
     const data = await apiClient.checkSystemReadiness();
@@ -29,13 +43,33 @@ export function App() {
     setRefreshing(false);
   };
 
+  const loadDemoState = async (projId: string, env: ProjectEnvironment) => {
+    try {
+      const state = await apiClient.getDemoState(projId, env);
+      if (state.baseline) {
+        setBaseline(state.baseline);
+      } else {
+        setBaseline(null);
+      }
+      if (state.readEdges) {
+        setReadEdges(state.readEdges);
+      }
+    } catch {
+      // Ignore if unauthenticated
+    }
+  };
+
   const loadProjects = async () => {
     try {
       const list = await apiClient.listProjects();
       setProjects(list);
       setIsAuthenticated(true);
-      if (list.length > 0 && !selectedProjectId) {
-        setSelectedProjectId(list[0].id);
+      const activeProjId = selectedProjectId || (list.length > 0 ? list[0].id : '');
+      if (activeProjId && !selectedProjectId) {
+        setSelectedProjectId(activeProjId);
+      }
+      if (activeProjId) {
+        await loadDemoState(activeProjId, selectedEnvironment);
       }
     } catch (err) {
       if ((err as Error).message === 'UNAUTHENTICATED') {
@@ -48,6 +82,12 @@ export function App() {
     fetchStatus();
     loadProjects();
   }, []);
+
+  useEffect(() => {
+    if (selectedProjectId && isAuthenticated) {
+      loadDemoState(selectedProjectId, selectedEnvironment);
+    }
+  }, [selectedProjectId, selectedEnvironment, isAuthenticated]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,6 +122,35 @@ export function App() {
       setCreatingProject(false);
     }
   };
+
+  const handleCaptureBaseline = async () => {
+    if (!selectedProjectId) return;
+    setCapturingBaseline(true);
+    setBaselineError(null);
+    try {
+      const res = await apiClient.captureBaseline(selectedProjectId, selectedEnvironment, 'sess_active');
+      setBaseline(res.baseline);
+      setReadEdges(res.readEdges);
+    } catch (err) {
+      setBaselineError((err as Error).message);
+    } finally {
+      setCapturingBaseline(false);
+    }
+  };
+
+  const handleReplayWorkflow = async (workflowId: string) => {
+    if (!selectedProjectId) return;
+    setReplayingWorkflow(workflowId);
+    try {
+      const res = await apiClient.replayWorkflow(workflowId, selectedProjectId, selectedEnvironment, 'sess_active');
+      setWorkflowResults((prev) => ({ ...prev, [workflowId]: res }));
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setReplayingWorkflow(null);
+    }
+  };
+
 
   const getStatusBadge = (status: 'loading' | 'ready' | 'offline') => {
     switch (status) {
@@ -337,8 +406,160 @@ export function App() {
           </div>
         </section>
 
+        {/* Baseline Capture Section (A03) */}
+        <section aria-label="Baseline Capture" className="bg-[#161b22] border border-[#30363d] rounded p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center space-x-2">
+                <h2 className="text-sm font-semibold text-[#f0f6fc]">Baseline Behavioral Capture (A03)</h2>
+                {baseline ? (
+                  <span className="px-2 py-0.5 rounded text-xs font-mono font-medium bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40">
+                    BASELINE CAPTURED v{baseline.version}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-xs font-mono font-medium bg-[#8b949e]/20 text-[#8b949e] border border-[#8b949e]/40">
+                    AWAITING BASELINE
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[#8b949e]">
+                Observes mock providers, captures stable fixtures, and registers deterministic behavioral twin.
+              </p>
+            </div>
+
+            <button
+              onClick={handleCaptureBaseline}
+              disabled={!isAuthenticated || capturingBaseline || !selectedProjectId}
+              className="px-4 py-2 bg-[#1f6feb] hover:bg-[#388bfd] disabled:opacity-50 text-white rounded text-xs font-medium transition flex items-center space-x-2 cursor-pointer shadow-sm"
+            >
+              <span>{capturingBaseline ? 'Capturing Baseline...' : 'Capture Healthy Baseline'}</span>
+            </button>
+          </div>
+
+          {baselineError && (
+            <div className="p-3 bg-[#da3633]/10 border border-[#da3633]/30 rounded text-[#f85149] font-mono text-xs">
+              {baselineError}
+            </div>
+          )}
+
+          {baseline && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-[#30363d] text-xs">
+              <div className="bg-[#0d1117] p-3 rounded border border-[#21262d] space-y-1">
+                <span className="text-[#8b949e] block">Fingerprint:</span>
+                <code className="text-[#58a6ff] font-mono block truncate" title={baseline.fingerprint}>
+                  {baseline.fingerprint.slice(0, 16)}...
+                </code>
+              </div>
+              <div className="bg-[#0d1117] p-3 rounded border border-[#21262d] space-y-1">
+                <span className="text-[#8b949e] block">Captured Fixtures:</span>
+                <span className="text-[#c9d1d9] font-mono block">
+                  {baseline.fixtures.usersCount} users • {baseline.fixtures.inventoryItemsCount} items • Shipping OK
+                </span>
+              </div>
+              <div className="bg-[#0d1117] p-3 rounded border border-[#21262d] space-y-1">
+                <span className="text-[#8b949e] block">Captured At:</span>
+                <span className="text-[#c9d1d9] font-mono block">
+                  {new Date(baseline.capturedAt).toLocaleTimeString()}
+                </span>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* Workflow Lineage & Invariants Section (A15) */}
+        <section aria-label="Workflow Lineage" className="bg-[#161b22] border border-[#30363d] rounded p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-[#f0f6fc]">Workflow Lineage & Invariant Tracing (A15)</h2>
+              <p className="text-xs text-[#8b949e]">
+                JavaScript Proxy traces canonical fields read during execution to calculate blast radius.
+              </p>
+            </div>
+            <span className="text-xs font-mono text-[#8b949e]">{readEdges.length} Active Read Edges</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[
+              {
+                id: 'welcome_email',
+                name: 'Welcome Email',
+                field: 'user.displayName',
+                provider: 'name -> displayName',
+                invariant: 'recipientName non-empty & matches baseline'
+              },
+              {
+                id: 'customer_profile',
+                name: 'Customer Profile',
+                field: 'user.id, user.displayName',
+                provider: 'id, name -> displayName',
+                invariant: 'Deep equals baseline profile'
+              },
+              {
+                id: 'inventory_sync',
+                name: 'Inventory Sync',
+                field: 'inventory.items',
+                provider: 'items list & quantities',
+                invariant: 'Synced counts match baseline'
+              },
+              {
+                id: 'delivery_estimate',
+                name: 'Delivery Estimate',
+                field: 'shipping.estimated_delivery_date',
+                provider: 'calendar day baseline calculation',
+                invariant: 'Delivery date matches baseline'
+              }
+            ].map((wf) => {
+              const res = workflowResults[wf.id];
+              return (
+                <div key={wf.id} className="bg-[#0d1117] border border-[#30363d] rounded p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold text-[#f0f6fc]">{wf.name}</h3>
+                    <button
+                      onClick={() => handleReplayWorkflow(wf.id)}
+                      disabled={!baseline || replayingWorkflow === wf.id}
+                      className="px-2.5 py-1 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-50 text-[#c9d1d9] border border-[#30363d] rounded text-xs font-mono cursor-pointer transition"
+                    >
+                      {replayingWorkflow === wf.id ? 'Replaying...' : 'Replay'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5 text-xs font-mono">
+                    <div className="flex justify-between text-[#8b949e]">
+                      <span>Read Edge:</span>
+                      <span className="text-[#79c0ff]">{wf.field}</span>
+                    </div>
+                    <div className="flex justify-between text-[#8b949e]">
+                      <span>Adapter Mapping:</span>
+                      <span className="text-[#e3b341]">{wf.provider}</span>
+                    </div>
+                    <div className="flex justify-between text-[#8b949e]">
+                      <span>Invariant:</span>
+                      <span className="text-[#8b949e]">{wf.invariant}</span>
+                    </div>
+                  </div>
+
+                  {res && (
+                    <div className="pt-2 border-t border-[#21262d] text-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#8b949e] font-mono">Replay Invariant:</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                          res.status === 'passed' ? 'bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40' : 'bg-[#da3633]/20 text-[#f85149] border border-[#da3633]/40'
+                        }`}>
+                          {res.status.toUpperCase()}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#8b949e] font-mono">{res.invariantResult.details}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
         {/* Seeded Endpoints Status */}
         <section aria-label="Mock Dependency Endpoints" className="bg-[#161b22] border border-[#30363d] rounded p-5 space-y-4">
+
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-[#f0f6fc]">
               Simulated Dependency Endpoints

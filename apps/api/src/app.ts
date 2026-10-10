@@ -7,14 +7,20 @@ import {
   OPERATOR_SESSION_COOKIE,
   OperatorSessionRequestSchema,
   CreateProjectRequestSchema,
-  ProjectEnvironmentSchema
+  ProjectEnvironmentSchema,
+  CaptureBaselineRequestSchema,
+  WorkflowIdSchema,
+  ReplayWorkflowRequestSchema
 } from '@driftguard/contracts';
 import { randomUUID } from 'node:crypto';
 import { OperatorAuthService } from './services/operator-auth-service.js';
 import { ProjectService } from './services/project-service.js';
+import { BaselineService } from './services/baseline-service.js';
 
 export interface ApiAppOptions {
   operatorToken?: string;
+  mockProvidersBaseUrl?: string;
+  baselineService?: BaselineService;
 }
 
 export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
@@ -25,6 +31,10 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
 
   const authService = new OperatorAuthService(options.operatorToken);
   const projectService = new ProjectService();
+  const baselineService =
+    options.baselineService ||
+    new BaselineService({ mockProvidersBaseUrl: options.mockProvidersBaseUrl });
+
 
   app.register(fastifyCookie);
 
@@ -244,7 +254,8 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     const envParsed = query.environment ? ProjectEnvironmentSchema.safeParse(query.environment) : null;
     const environment = envParsed && envParsed.success ? envParsed.data : 'development';
 
-    const state = projectService.getDemoState(query.projectId, environment);
+    const baseline = baselineService.getBaseline(query.projectId || 'prj_demo_default', environment);
+    const state = projectService.getDemoState(query.projectId, environment, baseline?.summary, baseline?.readEdges);
     if (!state) {
       return reply.status(404).send({
         error: {
@@ -270,5 +281,66 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     };
   });
 
+  // A03: Capture Baseline
+  app.post('/api/baselines/capture', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const parsed = CaptureBaselineRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Invalid capture baseline payload.',
+          details: parsed.error.format(),
+          correlationId
+        }
+      });
+    }
+
+    const { projectId, environment, sessionId } = parsed.data;
+    const result = await baselineService.captureBaseline(projectId, environment, sessionId);
+    return reply.status(201).send(result);
+  });
+
+  // A15: Replay Workflow
+  app.post('/api/workflows/:workflowId/replay', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const { workflowId } = request.params as { workflowId: string };
+    const workflowParsed = WorkflowIdSchema.safeParse(workflowId);
+    if (!workflowParsed.success) {
+      return reply.status(404).send({
+        error: {
+          code: 'WORKFLOW_NOT_FOUND',
+          message: `Unknown workflow '${workflowId}'.`,
+          details: { validWorkflows: WorkflowIdSchema.options },
+          correlationId
+        }
+      });
+    }
+
+    const bodyParsed = ReplayWorkflowRequestSchema.safeParse(request.body);
+    if (!bodyParsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Invalid workflow replay payload.',
+          details: bodyParsed.error.format(),
+          correlationId
+        }
+      });
+    }
+
+    const { projectId, environment, sessionId, userId } = bodyParsed.data;
+    const result = baselineService.replayWorkflow(
+      workflowParsed.data,
+      projectId,
+      environment,
+      sessionId,
+      userId
+    );
+
+    return reply.status(200).send(result);
+  });
+
   return app;
 }
+

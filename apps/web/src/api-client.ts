@@ -12,8 +12,14 @@ import {
   DemoStateResponseSchema,
   OperatorSessionResponse,
   OperatorSessionResponseSchema,
-  IDEMPOTENCY_KEY_HEADER
+  IDEMPOTENCY_KEY_HEADER,
+  ProjectEnvironment,
+  CaptureBaselineResponse,
+  CaptureBaselineResponseSchema,
+  ReplayWorkflowResponse,
+  ReplayWorkflowResponseSchema
 } from '@driftguard/contracts';
+
 
 export interface SystemReadiness {
   api: {
@@ -146,6 +152,56 @@ export class ApiClient {
     const data = await res.json();
     return DemoStateResponseSchema.parse(data);
   }
+
+  // Baseline & Workflows (A03, A15)
+  async captureBaseline(
+    projectId: string,
+    environment: ProjectEnvironment,
+    sessionId: string
+  ): Promise<CaptureBaselineResponse> {
+    const res = await fetch(`${this.apiBase}/baselines/capture`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ projectId, environment, sessionId })
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error?.message || `Failed to capture baseline: ${res.status}`);
+    }
+
+    const data = await res.json();
+    return CaptureBaselineResponseSchema.parse(data);
+  }
+
+  async replayWorkflow(
+    workflowId: string,
+    projectId: string,
+    environment: ProjectEnvironment,
+    sessionId: string,
+    userId?: string
+  ): Promise<ReplayWorkflowResponse> {
+    const res = await fetch(`${this.apiBase}/workflows/${workflowId}/replay`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ projectId, environment, sessionId, userId })
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error?.message || `Failed to replay workflow: ${res.status}`);
+    }
+
+    const data = await res.json();
+    return ReplayWorkflowResponseSchema.parse(data);
+  }
 }
+
 
 export const apiClient = new ApiClient();

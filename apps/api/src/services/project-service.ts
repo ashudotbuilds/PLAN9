@@ -3,8 +3,11 @@ import {
   ProjectSummary,
   ProjectEnvironment,
   CreateProjectResponse,
-  ProjectDetailResponse
+  ProjectDetailResponse,
+  BaselineSummary,
+  DependencyEdge
 } from '@driftguard/contracts';
+
 
 export interface ProjectRecord {
   id: string;
@@ -153,7 +156,12 @@ export class ProjectService {
     };
   }
 
-  getDemoState(projectId?: string, environment: ProjectEnvironment = 'development') {
+  getDemoState(
+    projectId?: string,
+    environment: ProjectEnvironment = 'development',
+    baseline?: BaselineSummary | null,
+    readEdges?: DependencyEdge[]
+  ) {
     let targetProject = projectId ? this.projects.get(projectId) : undefined;
     if (!targetProject) {
       targetProject = Array.from(this.projects.values())[0];
@@ -166,12 +174,15 @@ export class ProjectService {
       projectId: targetProject.id,
       environment,
       sessionId: envState.activeSessionId,
-      status: 'awaiting_baseline',
+      status: baseline ? 'baseline_captured' : 'awaiting_baseline',
       providers: [
         { id: 'users', name: 'Users API', status: 'ready' },
         { id: 'inventory', name: 'Inventory API', status: 'ready' },
         { id: 'shipping', name: 'Shipping API', status: 'ready' }
-      ]
+      ],
+      baseline: baseline || undefined,
+      readEdges: readEdges || undefined
     };
   }
 }
+

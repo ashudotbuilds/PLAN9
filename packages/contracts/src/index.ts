@@ -240,6 +240,40 @@ export const ProjectDetailResponseSchema = z.object({
 });
 export type ProjectDetailResponse = z.infer<typeof ProjectDetailResponseSchema>;
 
+// Ticket 02: Baseline & Workflow Lineage Schemas (A03, A15)
+export const WorkflowIdSchema = z.enum([
+  'welcome_email',
+  'customer_profile',
+  'inventory_sync',
+  'delivery_estimate'
+]);
+export type WorkflowId = z.infer<typeof WorkflowIdSchema>;
+
+export const DependencyEdgeSchema = z.object({
+  workflowId: WorkflowIdSchema,
+  canonicalField: z.string(),
+  providerField: z.string().optional(),
+  invariant: z.string()
+});
+export type DependencyEdge = z.infer<typeof DependencyEdgeSchema>;
+
+export const BaselineSummarySchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  environment: ProjectEnvironmentSchema,
+  sessionId: z.string(),
+  version: z.number().int().positive(),
+  fingerprint: z.string(),
+  capturedAt: z.string().datetime(),
+  status: z.literal('captured'),
+  fixtures: z.object({
+    usersCount: z.number().int(),
+    inventoryItemsCount: z.number().int(),
+    shippingCalculated: z.boolean()
+  })
+});
+export type BaselineSummary = z.infer<typeof BaselineSummarySchema>;
+
 // A02: Demo State
 export const DemoStateResponseSchema = z.object({
   projectId: z.string(),
@@ -252,7 +286,9 @@ export const DemoStateResponseSchema = z.object({
       name: z.string(),
       status: z.string()
     })
-  )
+  ),
+  baseline: BaselineSummarySchema.optional(),
+  readEdges: z.array(DependencyEdgeSchema).optional()
 });
 export type DemoStateResponse = z.infer<typeof DemoStateResponseSchema>;
 
@@ -269,4 +305,42 @@ export const ListProvidersResponseSchema = z.object({
   providers: z.array(ProviderSummarySchema)
 });
 export type ListProvidersResponse = z.infer<typeof ListProvidersResponseSchema>;
+
+// A03: Baseline Capture
+export const CaptureBaselineRequestSchema = z.object({
+  projectId: z.string().min(1),
+  environment: ProjectEnvironmentSchema,
+  sessionId: z.string().min(1)
+});
+export type CaptureBaselineRequest = z.infer<typeof CaptureBaselineRequestSchema>;
+
+export const CaptureBaselineResponseSchema = z.object({
+  baseline: BaselineSummarySchema,
+  readEdges: z.array(DependencyEdgeSchema),
+  auditEventId: z.string()
+});
+export type CaptureBaselineResponse = z.infer<typeof CaptureBaselineResponseSchema>;
+
+
+// A15: Workflow Replay
+export const ReplayWorkflowRequestSchema = z.object({
+  projectId: z.string().min(1),
+  environment: ProjectEnvironmentSchema,
+  sessionId: z.string().min(1),
+  userId: z.string().optional()
+});
+export type ReplayWorkflowRequest = z.infer<typeof ReplayWorkflowRequestSchema>;
+
+export const ReplayWorkflowResponseSchema = z.object({
+  workflowId: WorkflowIdSchema,
+  status: z.enum(['passed', 'failed']),
+  result: z.unknown(),
+  invariantResult: z.object({
+    passed: z.boolean(),
+    details: z.string()
+  }),
+  readFields: z.array(z.string()),
+  auditEventId: z.string()
+});
+export type ReplayWorkflowResponse = z.infer<typeof ReplayWorkflowResponseSchema>;
 

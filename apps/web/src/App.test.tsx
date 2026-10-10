@@ -94,4 +94,68 @@ describe('Web App - Operational Canvas & Operator Onboarding', () => {
     expect(screen.getAllByText(/Test Project/).length).toBeGreaterThan(0);
     expect(screen.getByText(/development \(demo active\)/)).toBeInTheDocument();
   });
+
+  it('allows capturing baseline and displays workflow lineage', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        id: 'prj_test_1',
+        name: 'Test Project',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        environments: ['development', 'production']
+      }
+    ]);
+    vi.spyOn(apiClient, 'getDemoState').mockResolvedValue({
+      projectId: 'prj_test_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      status: 'awaiting_baseline',
+      providers: []
+    });
+    vi.spyOn(apiClient, 'captureBaseline').mockResolvedValue({
+      baseline: {
+        id: 'base_1',
+        projectId: 'prj_test_1',
+        environment: 'development',
+        sessionId: 'sess_1',
+        version: 1,
+        fingerprint: 'abc1234567890def',
+        capturedAt: '2026-10-11T01:00:00.000Z',
+        status: 'captured',
+        fixtures: {
+          usersCount: 3,
+          inventoryItemsCount: 3,
+          shippingCalculated: true
+        }
+      },
+      readEdges: [
+        {
+          workflowId: 'welcome_email',
+          canonicalField: 'user.displayName',
+          invariant: 'recipientName non-empty'
+        }
+      ],
+      auditEventId: 'aud_1'
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AWAITING BASELINE')).toBeInTheDocument();
+    });
+
+    const captureBtn = screen.getByRole('button', { name: /capture healthy baseline/i });
+    fireEvent.click(captureBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('BASELINE CAPTURED v1')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Welcome Email')).toBeInTheDocument();
+    expect(screen.getByText('user.displayName')).toBeInTheDocument();
+  });
 });
+
