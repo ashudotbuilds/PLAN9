@@ -915,7 +915,40 @@ Never include credentials or rewrite another contributor's history.
   - `log.md`
 - **Team Frontier Status:**
   - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33.
-  - Next in line in topological order: **Ticket 12** (`ashudotbuilds`: "[P0] 12: Retain error evidence and reject oversized/stale SDK deliveries").
+  - Next in line in topological order: **Ticket 12** (`AnushkaBhardwaj15`: "[P0] 12: Keep failures bounded and explainable across the demo").
+
+---
+
+## Entry: 2026-10-11 - Ticket 12: Keep failures bounded and explainable across the demo
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#12](https://github.com/ashudotbuilds/PLAN9/issues/12)
+- **Code Commit:** `2b7c370`
+- **Status:** COMPLETED, VERIFIED, AND INTEGRATED into main; Issue #12 closed.
+- **Scope:** PRD FR-OPS-01, NFR-04, NFR-07, NFR-08, NFR-09, NFR-13, NFR-14, NFR-19, NFR-20, NFR-21, NFR-22, NFR-23. Sections 12.5, 13.1–13.2, 16.1, 22–23; Endpoints A01, A02, A06, A08, A17.
+- **Implementation summary:**
+  1. **Safe Correlation Envelope & Error Mapping:**
+     - Propagates `X-Correlation-Id` across all responses and error payloads (`{ error: { code, message, details, correlationId } }`).
+     - Maps Fastify payload limit errors (`FST_ERR_CTP_BODY_TOO_LARGE`) to stable 413 `PAYLOAD_TOO_LARGE`.
+     - Attaches standard `Retry-After: 60` header on 429 rate-limited responses.
+     - Preserves secret redaction in all logged and returned error contexts.
+  2. **Bounded Auth Failure Logs:**
+     - Enforces a bounded ring buffer (`MAX_AUTH_FAILURES = 100`) for unauthenticated operator and ingestion requests to prevent memory/audit explosion during hostile authentication floods.
+  3. **Verification & Suite Coverage:**
+     - 125 vitest tests passing across all 7 workspace packages (`pnpm test`).
+     - Monorepo production build clean (`pnpm -r run build`).
+     - Monorepo typecheck passing with 0 errors (`pnpm -r run typecheck`).
+     - Planning integrity validated (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `apps/api/src/app.ts`
+  - `apps/api/tests/api.test.ts`
+  - `.scratch/driftguard/issues/12-error-evidence-and-bounds.md`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33, 12.
+  - Next in line in topological order: **Ticket 34** (`chandrabhan-kushwaha`: "[P0] 34: Surface SDK onboarding status and diagnostics in the operator dashboard").
+
 
 
 
