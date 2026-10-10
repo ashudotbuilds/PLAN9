@@ -1449,6 +1449,229 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(rollRes.json().error.code).toBe('NO_ROLLBACK_PARENT');
     });
   });
+
+  describe('Ticket 08: A16 Backend Recovery Workflow & A17 Status Polling', () => {
+    async function setupIncidentApp() {
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+
+      let isRenamed = false;
+      const mockFetch = vi.fn(async (url: string | URL | Request) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/scenarios/users.field-rename/inject')) {
+          isRenamed = true;
+          return { ok: true, json: async () => ({ ok: true, activeScenarios: ['users.field-rename'] }) };
+        }
+        if (urlStr.includes('/users/')) {
+          const id = urlStr.split('/users/')[1]?.split('?')[0] || 'u-123';
+          const nameMap: Record<string, string> = { 'u-123': 'Aarav', 'u-456': 'Meera', 'u-789': 'Kabir' };
+          const name = nameMap[id] || 'Aarav';
+          return {
+            ok: true,
+            json: async () => (isRenamed ? { id, display_name: name } : { id, name })
+          };
+        }
+        if (urlStr.includes('/inventory/items')) {
+          return { ok: true, json: async () => ({ items: [{ sku: 'WIDGET-A', quantity: 15 }] }) };
+        }
+        if (urlStr.includes('/shipping/estimate')) {
+          return { ok: true, json: async () => ({ estimated_delivery_date: '2026-10-18' }) };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      await baselineService.captureBaseline('prj_demo_default', 'development', 'sess_1');
+
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      await incidentService.injectScenario('users.field-rename', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+      return { testApp, incidentId, baselineService, incidentService };
+    }
+
+    it('requires operator authentication for A16 recover and A17 poll', async () => {
+      const recRes = await app.inject({
+        method: 'POST',
+        url: '/api/incidents/inc_1/recover',
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+      expect(recRes.statusCode).toBe(401);
+
+      const pollRes = await app.inject({
+        method: 'GET',
+        url: '/api/recovery-runs/rec_1'
+      });
+      expect(pollRes.statusCode).toBe(401);
+    });
+
+    it('starts recovery with 202 returning exactly recoveryRunId and incidentId, and completes successfully (A16, A17)', async () => {
+      const { testApp, incidentId } = await setupIncidentApp();
+
+      const startRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/recover`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+
+      expect(startRes.statusCode).toBe(202);
+      const startBody = startRes.json();
+      expect(Object.keys(startBody).sort()).toEqual(['incidentId', 'recoveryRunId']);
+      expect(startBody.incidentId).toBe(incidentId);
+      expect(startBody.recoveryRunId).toMatch(/^rec_/);
+
+      const recoveryRunId = startBody.recoveryRunId;
+
+      // Poll until completed
+      let pollRes;
+      let run;
+      for (let i = 0; i < 20; i++) {
+        pollRes = await testApp.inject({
+          method: 'GET',
+          url: `/api/recovery-runs/${recoveryRunId}`,
+          headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+        });
+        expect(pollRes.statusCode).toBe(200);
+        run = pollRes.json().recoveryRun;
+        if (run.status === 'succeeded' || run.status === 'failed') break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+
+      expect(run.status).toBe('succeeded');
+      expect(run.stage).toBe('completed');
+      expect(run.incidentId).toBe(incidentId);
+      expect(run.completedAt).toBeDefined();
+
+      // Verify stage history contains expected sequence
+      const stages = run.stageHistory.map((s: any) => s.stage);
+      expect(stages).toContain('queued');
+      expect(stages).toContain('impact');
+      expect(stages).toContain('proposing');
+      expect(stages).toContain('validating');
+      expect(stages).toContain('activating');
+      expect(stages).toContain('replaying');
+
+      // Verify artifacts populated
+      expect(run.artifacts.patchId).toBeDefined();
+      expect(run.artifacts.patchHash).toBeDefined();
+      expect(run.artifacts.validationRunId).toBeDefined();
+      expect(run.artifacts.activeAdapterId).toBeDefined();
+
+      // Verify incident is recovered
+      const incRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/incidents/${incidentId}?projectId=prj_demo_default&environment=development`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      const incident = incRes.json().incident;
+      expect(incident.status).toBe('recovered');
+      expect(incident.recoveryStatus).toBe('recovered');
+    });
+
+    it('rejects concurrent recovery on the same incident with 409 RECOVERY_ALREADY_RUNNING', async () => {
+      const { testApp, incidentId, incidentService } = await setupIncidentApp();
+
+      // Inject an active recovery run directly into incidentService to simulate in-flight run
+      const conflictRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/recover`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+
+      expect(conflictRes.statusCode).toBe(202);
+      const activeRunId = conflictRes.json().recoveryRunId;
+
+      // Second immediate call on same incident while running or queued
+      // Set the first run status explicitly to running to test concurrent guard
+      const run = incidentService.getRecoveryRun(activeRunId);
+      if (run) {
+        run.status = 'running';
+      }
+
+      const secondRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/recover`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+
+      expect(secondRes.statusCode).toBe(409);
+      expect(secondRes.json().error.code).toBe('RECOVERY_ALREADY_RUNNING');
+    });
+
+    it('rejects recovery on non-existent incident with 404 INCIDENT_NOT_FOUND', async () => {
+      const { testApp } = await setupIncidentApp();
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/incidents/inc_nonexistent/recover',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error.code).toBe('INCIDENT_NOT_FOUND');
+    });
+
+    it('returns 404 RECOVERY_RUN_NOT_FOUND when polling unknown run', async () => {
+      const { testApp } = await setupIncidentApp();
+
+      const res = await testApp.inject({
+        method: 'GET',
+        url: '/api/recovery-runs/rec_unknown',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error.code).toBe('RECOVERY_RUN_NOT_FOUND');
+    });
+
+    it('rejects recovery when no baseline captured with 409 BASELINE_REQUIRED', async () => {
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+
+      const mockFetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }));
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      // Add dummy incident without capturing baseline
+      (incidentService as any).incidents.set('inc_no_base', {
+        id: 'inc_no_base',
+        projectId: 'prj_demo_default',
+        environment: 'development',
+        sessionId: 'sess_1',
+        provider: 'users',
+        endpoint: '/users/:id',
+        fingerprint: 'fp',
+        status: 'detected',
+        severity: 'high',
+        summary: 'summary',
+        detectedAt: new Date().toISOString(),
+        evidenceStrength: 'confirmed',
+        affectedWorkflows: ['welcome_email'],
+        findings: [],
+        beforeEvidence: {},
+        afterEvidence: {},
+        failedWorkflows: [],
+        auditEventId: 'aud_1'
+      });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/incidents/inc_no_base/recover',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe('BASELINE_REQUIRED');
+    });
+  });
 });
 
 

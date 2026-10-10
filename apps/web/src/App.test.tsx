@@ -877,6 +877,120 @@ describe('Web App - Operational Canvas & Operator Onboarding', () => {
       expect(screen.getByText('adp_v1')).toBeInTheDocument();
     });
   });
+
+  it('Ticket 08: runs safe recovery workflow and tracks real-time progress in UI', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        id: 'prj_test_1',
+        name: 'Test Project',
+        environments: ['development'],
+        createdAt: '2026-10-11T00:00:00.000Z'
+      }
+    ]);
+    vi.spyOn(apiClient, 'getDemoState').mockResolvedValue({
+      projectId: 'prj_test_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      status: 'ready',
+      providers: [],
+      readEdges: [],
+      incidents: [
+        {
+          id: 'inc_123',
+          projectId: 'prj_test_1',
+          environment: 'development',
+          sessionId: 'sess_1',
+          provider: 'users',
+          endpoint: '/users/:id',
+          fingerprint: 'fingerprint_123',
+          status: 'detected',
+          severity: 'high',
+          summary: "Breaking schema change: provider field 'name' renamed to 'display_name'",
+          detectedAt: '2026-10-11T01:30:00.000Z',
+          evidenceStrength: 'confirmed',
+          affectedWorkflows: ['welcome_email', 'customer_profile']
+        }
+      ],
+      activeScenarios: ['users.field-rename']
+    });
+
+    vi.spyOn(apiClient, 'getIncident').mockResolvedValue({
+      id: 'inc_123',
+      projectId: 'prj_test_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      provider: 'users',
+      endpoint: '/users/:id',
+      fingerprint: 'fingerprint_123',
+      status: 'detected',
+      severity: 'high',
+      summary: "Breaking schema change: provider field 'name' renamed to 'display_name'",
+      detectedAt: '2026-10-11T01:30:00.000Z',
+      evidenceStrength: 'confirmed',
+      affectedWorkflows: ['welcome_email', 'customer_profile'],
+      findings: [],
+      beforeEvidence: {},
+      afterEvidence: {},
+      failedWorkflows: [],
+      auditEventId: 'aud_inc_1'
+    });
+
+    const startRecoverySpy = vi.spyOn(apiClient, 'startRecovery').mockResolvedValue({
+      recoveryRunId: 'rec_run_999',
+      incidentId: 'inc_123'
+    });
+
+    const getRecoveryRunSpy = vi.spyOn(apiClient, 'getRecoveryRun').mockResolvedValue({
+      id: 'rec_run_999',
+      incidentId: 'inc_123',
+      projectId: 'prj_test_1',
+      environment: 'development',
+      status: 'succeeded',
+      stage: 'completed',
+      stageHistory: [
+        { stage: 'queued', status: 'completed', startedAt: '2026-10-11T03:00:00.000Z' },
+        { stage: 'impact', status: 'completed', startedAt: '2026-10-11T03:00:01.000Z' },
+        { stage: 'proposing', status: 'completed', startedAt: '2026-10-11T03:00:02.000Z' },
+        { stage: 'validating', status: 'completed', startedAt: '2026-10-11T03:00:03.000Z' },
+        { stage: 'activating', status: 'completed', startedAt: '2026-10-11T03:00:04.000Z' },
+        { stage: 'replaying', status: 'completed', startedAt: '2026-10-11T03:00:05.000Z' }
+      ],
+      artifacts: {
+        patchId: 'patch_val_123',
+        patchHash: 'hash_val_123',
+        validationRunId: 'val_123',
+        activeAdapterId: 'adp_v2'
+      },
+      startedAt: '2026-10-11T03:00:00.000Z',
+      completedAt: '2026-10-11T03:00:06.000Z',
+      auditEventId: 'aud_rec_999'
+    });
+
+    render(<App />);
+
+    // Click incident card
+    const incidentCard = await screen.findByText(/Breaking schema change: provider field 'name' renamed/);
+    fireEvent.click(incidentCard);
+
+    // Verify Run Safe Recovery button exists
+    const recoverBtn = await screen.findByRole('button', { name: /run safe recovery \(a16\)/i });
+    expect(recoverBtn).toBeEnabled();
+
+    // Click recovery
+    fireEvent.click(recoverBtn);
+    expect(startRecoverySpy).toHaveBeenCalledWith('inc_123', 'prj_test_1', 'development');
+
+    // Verify recovery run ID and completed stage rendered
+    await waitFor(() => {
+      expect(screen.getByText('rec_run_999')).toBeInTheDocument();
+      expect(screen.getByText('COMPLETED')).toBeInTheDocument();
+      expect(screen.getByText(/validating \(completed\)/)).toBeInTheDocument();
+    });
+  });
 });
 
 

@@ -124,12 +124,15 @@ export const RecoveryRunStatusSchema = z.enum([
 export type RecoveryRunStatus = z.infer<typeof RecoveryRunStatusSchema>;
 
 export const RecoveryRunStageSchema = z.enum([
+  'queued',
   'impact',
   'proposing',
   'validating',
   'activating',
   'replaying',
-  'rolling_back'
+  'rolling_back',
+  'completed',
+  'failed'
 ]);
 
 export type RecoveryRunStage = z.infer<typeof RecoveryRunStageSchema>;
@@ -541,6 +544,7 @@ export const IncidentDetailSchema = z.object({
   validationRuns: z.array(z.lazy(() => ValidationRunSchema)).optional(),
   activeAdapter: z.lazy(() => ActiveAdapterSchema).optional(),
   recoveryStatus: z.enum(['recovered', 'rolled_back', 'pending']).optional(),
+  recoveryRuns: z.array(z.lazy(() => RecoveryRunSchema)).optional(),
   auditEventId: z.string()
 });
 export type IncidentDetail = z.infer<typeof IncidentDetailSchema>;
@@ -680,3 +684,61 @@ export const RollbackPatchResponseSchema = z.object({
   auditEventId: z.string()
 });
 export type RollbackPatchResponse = z.infer<typeof RollbackPatchResponseSchema>;
+
+// Ticket 08: Backend Recovery Workflow & Polling (A16, A17)
+export const RecoveryRunStageHistoryItemSchema = z.object({
+  stage: RecoveryRunStageSchema,
+  status: z.enum(['running', 'completed', 'failed']),
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime().optional(),
+  details: z.string().optional()
+});
+export type RecoveryRunStageHistoryItem = z.infer<typeof RecoveryRunStageHistoryItemSchema>;
+
+export const RecoveryRunArtifactsSchema = z.object({
+  impactAnalysisId: z.string().optional(),
+  patchId: z.string().optional(),
+  patchHash: z.string().optional(),
+  validationRunId: z.string().optional(),
+  activeAdapterId: z.string().optional(),
+  restoredAdapterId: z.string().optional()
+});
+export type RecoveryRunArtifacts = z.infer<typeof RecoveryRunArtifactsSchema>;
+
+export const RecoveryRunSchema = z.object({
+  id: z.string(),
+  incidentId: z.string(),
+  projectId: z.string(),
+  environment: ProjectEnvironmentSchema,
+  status: RecoveryRunStatusSchema,
+  stage: RecoveryRunStageSchema,
+  stageHistory: z.array(RecoveryRunStageHistoryItemSchema),
+  artifacts: RecoveryRunArtifactsSchema,
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime().optional(),
+  error: z
+    .object({
+      code: z.string(),
+      message: z.string()
+    })
+    .optional(),
+  auditEventId: z.string()
+});
+export type RecoveryRun = z.infer<typeof RecoveryRunSchema>;
+
+export const StartRecoveryRequestSchema = z.object({
+  projectId: z.string().optional(),
+  environment: ProjectEnvironmentSchema.optional()
+});
+export type StartRecoveryRequest = z.infer<typeof StartRecoveryRequestSchema>;
+
+export const StartRecoveryResponseSchema = z.object({
+  recoveryRunId: z.string(),
+  incidentId: z.string()
+});
+export type StartRecoveryResponse = z.infer<typeof StartRecoveryResponseSchema>;
+
+export const GetRecoveryRunResponseSchema = z.object({
+  recoveryRun: RecoveryRunSchema
+});
+export type GetRecoveryRunResponse = z.infer<typeof GetRecoveryRunResponseSchema>;

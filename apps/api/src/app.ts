@@ -532,6 +532,46 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     return reply.status(200).send(result);
   });
 
+  // A16: Run Recovery Workflow (Asynchronous 202)
+  app.post('/api/incidents/:incidentId/recover', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const { incidentId } = request.params as { incidentId: string };
+    const query = request.query as { projectId?: string; environment?: string };
+    const body = (request.body as { projectId?: string; environment?: string } | undefined) || {};
+
+    const envCandidate = body.environment || query.environment;
+    const envParsed = envCandidate ? ProjectEnvironmentSchema.safeParse(envCandidate) : null;
+    const environment = envParsed && envParsed.success ? envParsed.data : 'development';
+    const projectId = body.projectId || query.projectId || 'prj_demo_default';
+
+    const result = await incidentService.startRecovery(incidentId, projectId, environment);
+    // PRD Acceptance Criteria: exactly { recoveryRunId, incidentId }; correlation metadata is a response header
+    return reply.status(202).send({
+      recoveryRunId: result.recoveryRunId,
+      incidentId: result.incidentId
+    });
+  });
+
+  // A17: Poll Recovery Run Progress
+  app.get('/api/recovery-runs/:recoveryRunId', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const { recoveryRunId } = request.params as { recoveryRunId: string };
+
+    const recoveryRun = incidentService.getRecoveryRun(recoveryRunId);
+    if (!recoveryRun) {
+      return reply.status(404).send({
+        error: {
+          code: 'RECOVERY_RUN_NOT_FOUND',
+          message: `Recovery run '${recoveryRunId}' not found.`,
+          details: { recoveryRunId },
+          correlationId
+        }
+      });
+    }
+
+    return reply.status(200).send({ recoveryRun });
+  });
+
   return app;
 }
 

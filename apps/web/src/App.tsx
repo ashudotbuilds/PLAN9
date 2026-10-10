@@ -12,7 +12,8 @@ import {
   RepairProposal,
   ValidationRun,
   ActiveAdapter,
-  PostActivationReplayOutcome
+  PostActivationReplayOutcome,
+  RecoveryRun
 } from '@driftguard/contracts';
 
 export function App() {
@@ -73,6 +74,11 @@ export function App() {
   const [activationError, setActivationError] = useState<string | null>(null);
   const [activeAdapter, setActiveAdapter] = useState<ActiveAdapter | null>(null);
   const [postActivationReplay, setPostActivationReplay] = useState<PostActivationReplayOutcome | null>(null);
+
+  // Ticket 08: Backend Recovery Workflow & Polling (A16, A17)
+  const [runningRecovery, setRunningRecovery] = useState(false);
+  const [activeRecoveryRun, setActiveRecoveryRun] = useState<RecoveryRun | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
 
   const fetchStatus = async () => {
@@ -405,6 +411,49 @@ export function App() {
       setActivationError((err as Error).message || 'Failed to rollback adapter.');
     } finally {
       setRollingBack(false);
+    }
+  };
+
+  const handleStartRecovery = async (incidentId: string) => {
+    if (!selectedProjectId) return;
+    setRunningRecovery(true);
+    setRecoveryError(null);
+    try {
+      const res = await apiClient.startRecovery(
+        incidentId,
+        selectedProjectId,
+        selectedEnvironment
+      );
+      // Immediately fetch initial state
+      let run = await apiClient.getRecoveryRun(res.recoveryRunId);
+      setActiveRecoveryRun(run);
+
+      // Poll every 400ms until terminal status (succeeded or failed)
+      while (run.status === 'queued' || run.status === 'running') {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        run = await apiClient.getRecoveryRun(res.recoveryRunId);
+        setActiveRecoveryRun(run);
+      }
+
+      // Refresh incident detail to capture updated status and active adapter
+      const detail = await apiClient.getIncident(
+        incidentId,
+        selectedProjectId,
+        selectedEnvironment
+      );
+      setSelectedIncident(detail);
+      if (detail.activeAdapter) {
+        setActiveAdapter(detail.activeAdapter);
+      }
+      setIncidents((prev) =>
+        prev.map((inc) =>
+          inc.id === incidentId ? { ...inc, status: detail.status } : inc
+        )
+      );
+    } catch (err: any) {
+      setRecoveryError(err.message || 'Failed to start recovery.');
+    } finally {
+      setRunningRecovery(false);
     }
   };
 
@@ -901,14 +950,82 @@ export function App() {
 
               {selectedIncident && (
                 <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded space-y-3 mt-3">
-                  <div className="flex items-center justify-between border-b border-[#21262d] pb-2">
-                    <h4 className="text-xs font-semibold text-[#f0f6fc]">
-                      Incident Evidence Inspection (A08) — {selectedIncident.id}
-                    </h4>
-                    <span className="text-[11px] font-mono text-[#79c0ff]">
-                      Fingerprint: {selectedIncident.fingerprint.slice(0, 16)}...
-                    </span>
+                  <div className="flex flex-wrap items-center justify-between border-b border-[#21262d] pb-2 gap-2">
+                    <div className="flex items-center space-x-2">
+                      <h4 className="text-xs font-semibold text-[#f0f6fc]">
+                        Incident Evidence Inspection (A08) — {selectedIncident.id}
+                      </h4>
+                      <span className="text-[11px] font-mono text-[#79c0ff]">
+                        Fingerprint: {selectedIncident.fingerprint.slice(0, 16)}...
+                      </span>
+                    </div>
+
+                    {/* Ticket 08: One-Click Backend Recovery Workflow (A16) */}
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => handleStartRecovery(selectedIncident.id)}
+                        disabled={runningRecovery || selectedIncident.status === 'recovered'}
+                        className="px-3 py-1 bg-[#1f6feb] hover:bg-[#388bfd] disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center space-x-1 cursor-pointer"
+                      >
+                        <span>
+                          {runningRecovery
+                            ? 'Recovering Workflow...'
+                            : selectedIncident.status === 'recovered'
+                            ? 'Recovered'
+                            : 'Run Safe Recovery (A16)'}
+                        </span>
+                      </button>
+                    </div>
                   </div>
+
+                  {recoveryError && (
+                    <div className="p-2 bg-[#da3633]/20 border border-[#da3633] text-[#f85149] rounded text-xs font-mono">
+                      {recoveryError}
+                    </div>
+                  )}
+
+                  {/* Active Recovery Run Live Progress */}
+                  {activeRecoveryRun && (
+                    <div className="p-3 bg-[#161b22] border border-[#1f6feb]/50 rounded space-y-2 text-xs font-mono">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#8b949e]">
+                          RECOVERY RUN:{' '}
+                          <strong className="text-[#58a6ff]">{activeRecoveryRun.id}</strong> • Stage:{' '}
+                          <strong className="text-[#e3b341]">{activeRecoveryRun.stage.toUpperCase()}</strong>
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            activeRecoveryRun.status === 'succeeded'
+                              ? 'bg-[#238636]/20 text-[#3fb950]'
+                              : activeRecoveryRun.status === 'failed'
+                              ? 'bg-[#da3633]/20 text-[#f85149]'
+                              : 'bg-[#1f6feb]/20 text-[#58a6ff] animate-pulse'
+                          }`}
+                        >
+                          {activeRecoveryRun.status.toUpperCase()}
+                        </span>
+                      </div>
+
+                      {/* Stage History */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-[#21262d] text-[10px]">
+                        {activeRecoveryRun.stageHistory.map((s, idx) => (
+                          <span
+                            key={idx}
+                            className={`px-1.5 py-0.5 rounded border ${
+                              s.status === 'completed'
+                                ? 'bg-[#238636]/20 text-[#3fb950] border-[#238636]/40'
+                                : s.status === 'failed'
+                                ? 'bg-[#da3633]/20 text-[#f85149] border-[#da3633]/40'
+                                : 'bg-[#1f6feb]/20 text-[#58a6ff] border-[#1f6feb]/40 animate-pulse'
+                            }`}
+                          >
+                            {s.stage} ({s.status})
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
                     <div className="bg-[#161b22] p-3 rounded border border-[#21262d] space-y-1">

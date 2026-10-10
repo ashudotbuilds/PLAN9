@@ -17,7 +17,12 @@ import {
   ValidationRun,
   ValidationWorkflowOutcome,
   WorkflowId,
-  WorkflowImpact
+  WorkflowImpact,
+  RecoveryRun,
+  RecoveryRunStage,
+  RecoveryRunStatus,
+  RecoveryRunStageHistoryItem,
+  RecoveryRunArtifacts
 } from '@driftguard/contracts';
 import { randomUUID, createHash } from 'node:crypto';
 import { BaselineService } from './baseline-service.js';
@@ -32,6 +37,7 @@ export class IncidentService {
   private incidents = new Map<string, IncidentDetail>(); // keyed by incidentId
   private validationRuns = new Map<string, ValidationRun>(); // keyed by validationRunId
   private activeAdapters = new Map<string, ActiveAdapter>(); // keyed by scopeKey (projectId:environment)
+  private recoveryRuns = new Map<string, RecoveryRun>(); // keyed by recoveryRunId
   private mockProvidersBaseUrl: string;
   private fetchFn: typeof fetch;
 
@@ -1037,6 +1043,195 @@ export class IncidentService {
       incidentStatus: targetIncident ? targetIncident.status : 'rolled_back',
       auditEventId
     };
+  }
+
+  // Ticket 08: Backend Recovery Workflow & Polling (A16, A17)
+  getRecoveryRun(recoveryRunId: string): RecoveryRun | undefined {
+    return this.recoveryRuns.get(recoveryRunId);
+  }
+
+  async startRecovery(
+    incidentId: string,
+    projectId: string,
+    environment: ProjectEnvironment
+  ): Promise<{ recoveryRunId: string; incidentId: string }> {
+    // 1. Locate incident in current scope
+    const incident = this.getIncident(incidentId, projectId, environment);
+    if (!incident) {
+      const err = new Error(`Incident '${incidentId}' not found in current scope.`);
+      (err as any).statusCode = 404;
+      (err as any).code = 'INCIDENT_NOT_FOUND';
+      throw err;
+    }
+
+    // 2. Reject concurrent active recovery on the same incident (FR-REC-01)
+    const existingActiveRun = Array.from(this.recoveryRuns.values()).find(
+      (r) => r.incidentId === incidentId && (r.status === 'running' || r.status === 'queued')
+    );
+    if (existingActiveRun) {
+      const err = new Error(`A recovery run is already in progress for incident '${incidentId}'.`);
+      (err as any).statusCode = 409;
+      (err as any).code = 'RECOVERY_ALREADY_RUNNING';
+      (err as any).details = { activeRecoveryRunId: existingActiveRun.id };
+      throw err;
+    }
+
+    // 3. Baseline requirement check
+    const baseline = this.baselineService.getBaseline(projectId, environment);
+    if (!baseline) {
+      const err = new Error('No baseline captured. You must capture a healthy baseline before recovery.');
+      (err as any).statusCode = 409;
+      (err as any).code = 'BASELINE_REQUIRED';
+      throw err;
+    }
+
+    // 4. Create initial recovery run record in queued status
+    const recoveryRunId = `rec_${randomUUID().slice(0, 8)}`;
+    const now = new Date().toISOString();
+    const auditEventId = `aud_${randomUUID().slice(0, 8)}`;
+
+    const recoveryRun: RecoveryRun = {
+      id: recoveryRunId,
+      incidentId,
+      projectId,
+      environment,
+      status: 'queued',
+      stage: 'queued',
+      stageHistory: [
+        {
+          stage: 'queued',
+          status: 'running',
+          startedAt: now
+        }
+      ],
+      artifacts: {},
+      startedAt: now,
+      auditEventId
+    };
+
+    this.recoveryRuns.set(recoveryRunId, recoveryRun);
+
+    if (!incident.recoveryRuns) {
+      incident.recoveryRuns = [];
+    }
+    incident.recoveryRuns.push(recoveryRun);
+
+    // 5. Asynchronously trigger the end-to-end recovery pipeline
+    void this.executeRecoveryWorkflow(recoveryRunId, incidentId, projectId, environment);
+
+    return { recoveryRunId, incidentId };
+  }
+
+  private async executeRecoveryWorkflow(
+    recoveryRunId: string,
+    incidentId: string,
+    projectId: string,
+    environment: ProjectEnvironment
+  ): Promise<void> {
+    const run = this.recoveryRuns.get(recoveryRunId);
+    if (!run) return;
+
+    const incident = this.getIncident(incidentId, projectId, environment);
+    if (!incident) return;
+
+    const transitionStage = (stage: RecoveryRunStage, details?: string) => {
+      const prev = run.stageHistory[run.stageHistory.length - 1];
+      if (prev && prev.status === 'running') {
+        prev.status = 'completed';
+        prev.completedAt = new Date().toISOString();
+      }
+      run.stage = stage;
+      run.stageHistory.push({
+        stage,
+        status: 'running',
+        startedAt: new Date().toISOString(),
+        details
+      });
+    };
+
+    try {
+      run.status = 'running';
+
+      // Stage 1: Impact Analysis (FR-REC-02)
+      transitionStage('impact', 'Tracing runtime consumer lineage and affected workflows');
+      const impactRes = this.analyzeImpact(incidentId, projectId, environment);
+      run.artifacts.impactAnalysisId = incidentId;
+
+      // Stage 2: Proposal Synthesis (FR-REC-02)
+      transitionStage('proposing', 'Synthesizing compatible adapter via deterministic fallback');
+      const proposalRes = this.proposeRepair(incidentId, projectId, environment);
+      const patch = proposalRes.proposal.patch;
+      run.artifacts.patchId = patch.id;
+      run.artifacts.patchHash = patch.hash;
+
+      // Stage 3: Candidate Validation (FR-REC-02, FR-REP-07)
+      transitionStage('validating', 'Evaluating 9 conjunctive safety gates in shadow mode');
+      const validationRes = await this.validatePatch(patch.id, projectId, environment, patch.hash);
+      run.artifacts.validationRunId = validationRes.validationRun.id;
+
+      if (validationRes.validationRun.status !== 'passed' || validationRes.validationRun.eligibility !== 'eligible') {
+        const lastStage = run.stageHistory[run.stageHistory.length - 1];
+        if (lastStage) {
+          lastStage.status = 'failed';
+          lastStage.completedAt = new Date().toISOString();
+        }
+        run.status = 'failed';
+        run.stage = 'failed';
+        run.completedAt = new Date().toISOString();
+        run.error = {
+          code: 'VALIDATION_FAILED',
+          message: `Patch validation failed safety gates: ${validationRes.validationRun.eligibility}`
+        };
+        return;
+      }
+
+      // Stage 4: Activation & Post-Activation Replay (FR-REC-02, FR-VAL-05, FR-VAL-08)
+      transitionStage('activating', 'Activating adapter version and executing post-activation replay');
+      const activationRes = await this.activatePatch(patch.id, projectId, environment, patch.hash);
+      run.artifacts.activeAdapterId = activationRes.activeAdapter.id;
+
+      if (activationRes.recoveryStatus === 'recovered') {
+        // Verification succeeded
+        transitionStage('replaying', 'Post-activation replay verified all affected workflows recovered');
+        const lastStage = run.stageHistory[run.stageHistory.length - 1];
+        if (lastStage) {
+          lastStage.status = 'completed';
+          lastStage.completedAt = new Date().toISOString();
+        }
+        run.status = 'succeeded';
+        run.stage = 'completed';
+        run.completedAt = new Date().toISOString();
+      } else {
+        // Replay failed; automatically rolled back
+        transitionStage('rolling_back', 'Post-activation replay failed; automatically rolled back to parent');
+        const lastStage = run.stageHistory[run.stageHistory.length - 1];
+        if (lastStage) {
+          lastStage.status = 'completed';
+          lastStage.completedAt = new Date().toISOString();
+        }
+        run.status = 'failed';
+        run.stage = 'rolling_back';
+        run.completedAt = new Date().toISOString();
+        run.error = {
+          code: 'REPLAY_VERIFICATION_FAILED',
+          message: 'Post-activation replay failed. Adapter automatically rolled back to parent version.'
+        };
+      }
+    } catch (err: any) {
+      // Infrastructure or unexpected error: preserve last valid incident state (FR-REC-04)
+      const lastStage = run.stageHistory[run.stageHistory.length - 1];
+      if (lastStage && lastStage.status === 'running') {
+        lastStage.status = 'failed';
+        lastStage.completedAt = new Date().toISOString();
+      }
+      run.status = 'failed';
+      run.stage = 'failed';
+      run.completedAt = new Date().toISOString();
+      run.error = {
+        code: err.code || 'RECOVERY_ERROR',
+        message: err.message || 'An error occurred during recovery execution.'
+      };
+    }
   }
 }
 

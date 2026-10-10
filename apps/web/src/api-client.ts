@@ -35,7 +35,11 @@ import {
   ActivatePatchResponse,
   ActivatePatchResponseSchema,
   RollbackPatchResponse,
-  RollbackPatchResponseSchema
+  RollbackPatchResponseSchema,
+  StartRecoveryResponse,
+  StartRecoveryResponseSchema,
+  GetRecoveryRunResponseSchema,
+  RecoveryRun
 } from '@driftguard/contracts';
 
 
@@ -426,6 +430,49 @@ export class ApiClient {
 
     const data = await res.json();
     return RollbackPatchResponseSchema.parse(data);
+  }
+
+  // Recovery Run & Polling (A16, A17)
+  async startRecovery(
+    incidentId: string,
+    projectId: string,
+    environment: ProjectEnvironment
+  ): Promise<StartRecoveryResponse> {
+    const res = await fetch(`${this.apiBase}/incidents/${incidentId}/recover`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ projectId, environment })
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      const err = new Error(errorJson.error?.message || `Failed to start recovery: ${res.status}`);
+      (err as any).code = errorJson.error?.code;
+      (err as any).details = errorJson.error?.details;
+      throw err;
+    }
+
+    const data = await res.json();
+    return StartRecoveryResponseSchema.parse(data);
+  }
+
+  async getRecoveryRun(recoveryRunId: string): Promise<RecoveryRun> {
+    const res = await fetch(`${this.apiBase}/recovery-runs/${recoveryRunId}`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error?.message || `Failed to get recovery run: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const parsed = GetRecoveryRunResponseSchema.parse(data);
+    return parsed.recoveryRun;
   }
 }
 

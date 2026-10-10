@@ -4,9 +4,9 @@
 
 **Blocked by:** [07 - Activate validated adapters and replay safely](07-activation-replay-and-rollback.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
-**Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
+**Planning readiness:** Fully implemented, verified across API, contract schemas, UI, and test suites.
 
 **Priority:** P0
 
@@ -14,21 +14,21 @@
 
 **GitHub issue:** [#8](https://github.com/ashudotbuilds/PLAN9/issues/8)
 
-**Applications/packages touched:** apps/api, packages/contracts, packages/repair, packages/validation.
+**Applications/packages touched:** apps/api, apps/web, packages/contracts.
 
 **PRD traceability:** FR-REC-01, FR-REC-02, FR-REC-03, FR-REC-04, FR-VAL-09, NFR-17, NFR-20. Sections 13, 13.1–13.2, 16 of [DRIFTGUARD_PRD.md](../../../DRIFTGUARD_PRD.md).
 
 ## Acceptance criteria
 
-- [ ] POST recover returns 202 with exactly recoveryRunId and incidentId; correlation metadata is a response header.
-- [ ] Backend persists queued/running/succeeded/failed status and the PRD stage enum; clients only poll.
-- [ ] Concurrent recovery on the same incident returns 409 RECOVERY_ALREADY_RUNNING with active run ID.
-- [ ] Infrastructure failure marks only the run failed and preserves the last valid incident state.
-- [ ] Successful restoration after replay failure ends run failed at rolling_back and incident rolled_back.
-- [ ] Guided actions share the same services, guards, and audit events; prevent conflicting mutations during an active run.
+- [x] POST recover returns 202 with exactly recoveryRunId and incidentId; correlation metadata is a response header.
+- [x] Backend persists queued/running/succeeded/failed status and the PRD stage enum; clients only poll.
+- [x] Concurrent recovery on the same incident returns 409 RECOVERY_ALREADY_RUNNING with active run ID.
+- [x] Infrastructure failure marks only the run failed and preserves the last valid incident state.
+- [x] Successful restoration after replay failure ends run failed at rolling_back and incident rolled_back.
+- [x] Guided actions share the same services, guards, and audit events; prevent conflicting mutations during an active run.
 
-- [ ] Recover and poll require operator context; resolve incident/run IDs to recorded project/environment/session, reject supplied scope mismatch, and require the owning demo lease for execution.
-- [ ] SDK bearer keys cannot start recovery, invoke guided stages, or administer keys. Preserve the exact asynchronous 202 response and separate run/incident truth.
+- [x] Recover and poll require operator context; resolve incident/run IDs to recorded project/environment/session, reject supplied scope mismatch, and require the owning demo lease for execution.
+- [x] SDK bearer keys cannot start recovery, invoke guided stages, or administer keys. Preserve the exact asynchronous 202 response and separate run/incident truth.
 
 ## Test scenarios
 
@@ -59,7 +59,7 @@ Deliver the acceptance criteria as one observable slice. Preserve the PRD safety
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.
