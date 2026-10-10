@@ -878,5 +878,45 @@ Never include credentials or rewrite another contributor's history.
   - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32.
   - Next in line in topological order: **Ticket 33** (`chandrabhan-kushwaha`: "[P0] 33: Bound and isolate SDK delivery and diagnostics").
 
+---
+
+## Entry: 2026-10-11 - Ticket 33: Bound and isolate SDK delivery and diagnostics
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#33](https://github.com/ashudotbuilds/PLAN9/issues/33)
+- **Code Commit:** `a50275b`
+- **Status:** COMPLETED, VERIFIED, AND INTEGRATED into main; Issue #33 closed.
+- **Scope:** PRD FR-SDK-02, FR-SDK-03, FR-ING-02, NFR-19, NFR-21, NFR-22. Sections 12.5/12.6/13.2; AT-SDK-05/06/09/10/15.
+- **Implementation summary:**
+  1. **Pure Observer Redaction & Normalization Package (`@driftguard/observer`):**
+     - Browser-free module providing `redactValue` (depth <= 8, keys <= 100, string truncation <= 1 KiB, circular detection), `sanitizeUrl` (stripping userinfo, query, fragment), `sanitizeRouteTemplate` (query/hash stripping and 256 char limit), and `isApprovedFixtureKey`.
+     - Validates and enforces approved three-identity fixture keys (`user:u-123`, `user:u-456`, `user:u-789`).
+  2. **Effective Policy Intersection & Bound Enforcement in `@driftguard/sdk`:**
+     - Requires intersection of local opt-in (`allowlisted_fixture`) AND server policy (`reviewed_fixtures`) AND approved fixture key to attach response evidence; defaults strictly to metadata-only.
+     - Enforces numeric PRD 12.5 bounds: max 16 KiB per event (dropping oversized events with `EVENT_TOO_LARGE`), max 20 events and 128 KiB per batch, max 100 events and 512 KiB per queue.
+     - Single-flight flush with 7-second deadline, transient retries (429/5xx) with backoff and `Retry-After` capping (`RETRY_AFTER_EXCEEDED`).
+     - Permanent 401/403 disablement and 409 `STALE_SESSION` handling (invalidating active session ID and requiring fresh registration).
+  3. **Verification & Suite Coverage:**
+     - 121 vitest tests passing across all 7 workspace packages/apps (`pnpm test`).
+     - Monorepo typecheck passing with 0 errors (`pnpm -r run typecheck`).
+     - Monorepo production build clean (`pnpm -r run build`).
+     - Planning integrity validated (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `packages/observer/package.json`
+  - `packages/observer/tsconfig.json`
+  - `packages/observer/src/index.ts`
+  - `packages/observer/tests/observer.test.ts`
+  - `packages/sdk/package.json`
+  - `packages/sdk/src/index.ts`
+  - `packages/sdk/tests/sdk.test.ts`
+  - `.scratch/driftguard/issues/33-sdk-privacy-failure-isolation.md`
+  - `pnpm-lock.yaml`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33.
+  - Next in line in topological order: **Ticket 12** (`ashudotbuilds`: "[P0] 12: Retain error evidence and reject oversized/stale SDK deliveries").
+
+
 
 
