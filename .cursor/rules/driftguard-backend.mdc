@@ -1,0 +1,31 @@
+---
+description: DriftGuard Fastify backend boundaries and safety invariants
+globs: "{apps/api,apps/mock-providers,packages}/**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# DriftGuard Backend
+
+Read `DRIFTGUARD_PRD.md` sections 12, 15, 16, and 18.
+
+- `apps/api` orchestrates observations, incidents, workflows, proposals, validation, activation, and audit.
+- `apps/mock-providers` exposes HTTP behavior and scenario controls. Detector code may observe its HTTP responses but must never read its scenario state.
+- Packages own focused logic; packages never import applications.
+- `packages/detector` is deterministic and has no LLM dependency.
+- Model output crosses the `RepairModel` seam as untrusted structured data.
+- Validate external input, stored data, and model output with Zod.
+- The P0 adapter DSL permits only `rename` and `coalesce`; reject every other operation. Never evaluate generated code.
+- Activation requires a passing validation record for the exact patch hash.
+- Preserve the parent adapter for rollback.
+- Human approval never bypasses deterministic validation. New evidence or a revised proposal must pass before activation.
+- Semantic, conflicting, high-risk, or insufficient evidence enters `review_required` and cannot auto-activate.
+- Shadow replay stubs non-idempotent side effects.
+- Redact secrets before persistence or model submission.
+
+Recovery is operator-triggered with `POST /api/incidents/:id/recover`, but backend-orchestrated. Persist a `RecoveryRun`, return `202`, then run impact, proposal, validation, activation, and replay on the server. React may poll `GET /api/recovery-runs/:recoveryRunId`; it never sequences stages.
+
+Use `queued | running | succeeded | failed` for run status and `impact | proposing | validating | activating | replaying | rolling_back` for its current stage. Keep run execution failure distinct from incident lifecycle state.
+
+Auto-activation requires the complete conjunctive policy in PRD `FR-REP-07`; review follows `FR-REP-08`. If post-activation replay fails, roll back to the recorded parent adapter, retain the failed evidence, and mark the incident `rolled_back`. Infrastructure failure fails only the `RecoveryRun`; it does not invent an incident transition.
+
+Tests use fixture-driven package tests, Fastify injection for routes, and the real mock-provider HTTP boundary for the golden integration flow.

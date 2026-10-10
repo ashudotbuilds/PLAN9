@@ -1,0 +1,40 @@
+---
+description: YAGNI, DRY, and lean design — no speculative abstraction
+alwaysApply: true
+---
+
+# YAGNI and DRY (Strict)
+
+Every implementation task must stay inside the current PRD requirement. Architecture is defined in `DRIFTGUARD_PRD.md` sections 12 and 18.
+
+## YAGNI — You Aren't Gonna Need It
+
+- Implement **only** what the current task/spec requires. No hooks, interfaces, or config for hypothetical futures.
+- **One caller, one implementation.** Do not extract an abstraction until the same logic is needed in **two or more** places with the same shape.
+- Prefer **concrete code** over factories, strategy registries, plugin systems, or generic frameworks unless the spec explicitly requires them.
+- Do not add wrapper types, service layers, or repository interfaces around a single database call or HTTP handler.
+- If a feature is out of scope for the task, **do not stub it** — omit it entirely.
+- **Backend:** no event bus, job framework, generic agent runtime, or extra service process for the P0 demo.
+- **React:** start with the single dashboard and local composition; add graph or global-state libraries only when the implemented behavior requires them.
+
+## DRY — Don't Repeat Yourself
+
+- Duplicate policy or invariant logic is a bug. Keep each rule in one package and reuse it through its public seam.
+- DRY applies to **behavior**, not line count. Two similar-looking blocks with different domain meaning should stay separate.
+- Reuse existing helpers and types before creating new ones. Read the codebase first.
+- API shapes are Zod schemas in `packages/contracts`; infer TypeScript types from them.
+
+## Abstraction red flags — stop and simplify
+
+| Do not add | Do instead |
+|---|---|
+| Interface with one implementation | Concrete type or function |
+| `Base*` / `Abstract*` for one subtype | Single struct or component |
+| Generic utility "framework" | Inline logic or one focused helper |
+| Extra package for 1–2 functions | Colocate with the caller |
+| Global store for one dashboard's transient state | `useState` / lifted state |
+| React context for one prop | Pass the prop |
+
+## Before finishing a task
+
+Ask: *Can I delete anything and still meet the spec?* If yes, delete it.

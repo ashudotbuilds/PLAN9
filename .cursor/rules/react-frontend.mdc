@@ -1,0 +1,26 @@
+---
+description: DriftGuard React control-plane boundaries and truthful demo states
+globs: apps/web/**/*.{ts,tsx,js,jsx}
+alwaysApply: false
+---
+
+# DriftGuard React Frontend
+
+Read `DRIFTGUARD_PRD.md` section 17.
+
+- Build one evidence-first operational canvas: dependency rail, incident workspace, three-column impact trace, repair lab, and audit timeline.
+- All HTTP goes through `src/lib/api-client.ts` or its eventual focused replacement.
+- Components render backend state and emit user intent. They never decide incident transitions, validation success, activation eligibility, or recovery.
+- Starting recovery means calling `POST /api/incidents/:id/recover`, accepting `202`, and polling `GET /api/recovery-runs/:recoveryRunId`. React never sequences recovery stages.
+- Render the server's run status and current stage (`impact`, `proposing`, `validating`, `activating`, `replaying`, or `rolling_back`) without inferring progress that was not reported.
+- Use shared contracts from `packages/contracts`; do not invent parallel response types.
+- Use server state tooling only for server state and local state for transient UI.
+- Display real backend evidence and executed check results. Label `live_model` and `deterministic_fallback` accurately.
+- Disable illegal actions with a reason derived from the backend state machine.
+- Include loading, empty, error, retry, review-required, rollback, and reset states.
+- Preserve keyboard access, visible focus, readable contrast, and reduced-motion behavior.
+- Use solid surfaces, typographic hierarchy, compact evidence rows, and a restrained operational palette. Do not use decorative gradients, glass effects, neon glow, bento layouts, blobs, or nested-card clutter.
+- Show impact as provider behavior -> canonical field -> workflow. Add a graph only if it communicates evidence more clearly than this trace.
+- Motion must explain a user-triggered action or lifecycle transition; avoid ambient and infinite animation.
+
+Colocate component tests, mock the API client in unit tests, assert user-visible behavior, and run `saransh_custom_antislop` before UI completion.

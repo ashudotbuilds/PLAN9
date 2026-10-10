@@ -1,0 +1,46 @@
+---
+description: Pragmatic SOLID at DriftGuard's real TypeScript variation seams
+alwaysApply: true
+---
+
+# SOLID for DriftGuard
+
+Apply SOLID to real variation seams. The architecture source is `DRIFTGUARD_PRD.md` sections 12 and 18.
+
+## Single Responsibility (S)
+
+- One reason to change per function, class, component, or module.
+- Fastify routes validate and translate HTTP; orchestration services coordinate packages and repositories.
+- Detector, lineage, adapter, repair policy, and validation packages each own one reason to change.
+- React components render; hooks coordinate UI data; the API client calls the backend.
+
+## Open/Closed (O)
+
+- Extend with new functions or composed types — not inheritance hierarchies or plugin registries.
+- New behavior = new code path behind existing seam, not a framework.
+
+## Liskov Substitution (L)
+
+- Test fakes and production implementations must honor the same contract, including errors, invariants, and lifecycle consistency.
+- Breaking a port's contract is a bug — fix the implementation, not the caller's expectations.
+
+## Interface Segregation (I)
+
+- Small interfaces at demonstrated variation seams: `RepairModel`, persistent/in-memory repositories, and clocks when deterministic tests require one.
+- No "god interfaces" with unused methods.
+
+## Dependency Inversion (D)
+
+- Core logic depends on contracts; application composition selects concrete model and repository implementations.
+- Wire dependencies in `apps/api/src/app.ts` — no mutable global singletons outside the isolated mock-provider scenario store.
+- **YAGNI gate:** no interface until a second implementation or test fake needs it.
+
+## SOLID vs YAGNI
+
+| SOLID says | YAGNI limits |
+|---|---|
+| Depend on abstractions at boundaries | Don't create abstractions before the boundary exists |
+| One responsibility | Don't split one function into five files prematurely |
+| Open for extension | Don't build extension points nothing extends yet |
+
+When SOLID and YAGNI conflict, **YAGNI wins** until a second use case appears.

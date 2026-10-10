@@ -1,0 +1,43 @@
+---
+description: Clarify only unresolved DriftGuard product and safety decisions before implementation
+alwaysApply: true
+---
+
+# Targeted `/grill-me`
+
+Use `DRIFTGUARD_PRD.md` as the default answer. Run `/grill-me` only when a missing decision would materially change the API, safety policy, state machine, or user-visible behavior.
+
+## Blocking topics
+
+- Observed evidence versus simulator ground truth
+- Provider, canonical contract, and workflow mapping
+- Allowed adapter operation and policy risk
+- Validation oracle, patch hash, activation, and rollback
+- Semantic ambiguity and human approval
+- Side-effect and idempotency handling
+- Backend authority versus frontend presentation
+- Test seam and acceptance scenario
+
+Do not reopen settled P0 decisions: recovery is operator-triggered and backend-orchestrated through `RecoveryRun`; the DSL is limited to `rename` and `coalesce`; approval cannot bypass validation; the rename proof uses three stable identities; semantic shipping drift is held for review; replay failure rolls back automatically; React polls rather than orchestrates.
+
+## Session
+
+```text
+/grill-me
+
+[Scope: PRD requirement, architecture area, or ticket title]
+Grill me on every blocking requirement, undefined term, and missing edge case.
+Do not propose code or architecture until the blocking frontier is empty.
+```
+
+- Ask a compact set of blocking questions with recommended answers.
+- Use `/grill-with-docs` when decisions must be captured in `CONTEXT.md` or `docs/adr/`.
+- Resume implementation as soon as the blocking frontier is empty.
+
+| Proceed | Clarify first |
+|---|---|
+| PRD requirement with explicit acceptance criteria | Unspecified safety or lifecycle behavior |
+| Reversible detail within the PRD architecture | New public API or risk-policy scope |
+| Bug with clear reproduction and expected result | Conflicting evidence or unclear expected result |
+
+For non-blocking ambiguity, make the smallest reversible choice and document it.
