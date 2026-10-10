@@ -10,7 +10,9 @@ import {
   IncidentDetail,
   AnalyzeImpactResponse,
   RepairProposal,
-  ValidationRun
+  ValidationRun,
+  ActiveAdapter,
+  PostActivationReplayOutcome
 } from '@driftguard/contracts';
 
 export function App() {
@@ -64,6 +66,13 @@ export function App() {
   const [validatingPatch, setValidatingPatch] = useState(false);
   const [validationRun, setValidationRun] = useState<ValidationRun | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Ticket 07: Activation, Replay & Rollback (A12, A13)
+  const [activatingPatch, setActivatingPatch] = useState(false);
+  const [rollingBack, setRollingBack] = useState(false);
+  const [activationError, setActivationError] = useState<string | null>(null);
+  const [activeAdapter, setActiveAdapter] = useState<ActiveAdapter | null>(null);
+  const [postActivationReplay, setPostActivationReplay] = useState<PostActivationReplayOutcome | null>(null);
 
 
   const fetchStatus = async () => {
@@ -253,6 +262,11 @@ export function App() {
       } else {
         setValidationRun(null);
       }
+      if (detail.activeAdapter) {
+        setActiveAdapter(detail.activeAdapter);
+      } else {
+        setActiveAdapter(null);
+      }
     } catch (err) {
       alert((err as Error).message);
     } finally {
@@ -323,6 +337,74 @@ export function App() {
       setValidationError((err as Error).message || 'Failed to validate candidate patch.');
     } finally {
       setValidatingPatch(false);
+    }
+  };
+
+  const handleActivatePatch = async (patchId: string, patchHash?: string) => {
+    setActivatingPatch(true);
+    setActivationError(null);
+    try {
+      const res = await apiClient.activatePatch(
+        patchId,
+        selectedProjectId,
+        selectedEnvironment,
+        patchHash
+      );
+      setActiveAdapter(res.activeAdapter);
+      setPostActivationReplay(res.postActivationReplay);
+      setSelectedIncident((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          status: res.incidentStatus as any,
+          recoveryStatus: res.recoveryStatus,
+          activeAdapter: res.activeAdapter
+        };
+      });
+      setIncidents((prev) =>
+        prev.map((inc) =>
+          inc.id === selectedIncident?.id
+            ? { ...inc, status: res.incidentStatus as any }
+            : inc
+        )
+      );
+    } catch (err) {
+      setActivationError((err as Error).message || 'Failed to activate patch.');
+    } finally {
+      setActivatingPatch(false);
+    }
+  };
+
+  const handleRollbackPatch = async (patchId: string) => {
+    setRollingBack(true);
+    setActivationError(null);
+    try {
+      const res = await apiClient.rollbackPatch(
+        patchId,
+        selectedProjectId,
+        selectedEnvironment
+      );
+      setActiveAdapter(res.restoredAdapter);
+      setSelectedIncident((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          status: res.incidentStatus as any,
+          recoveryStatus: 'rolled_back',
+          activeAdapter: res.restoredAdapter
+        };
+      });
+      setIncidents((prev) =>
+        prev.map((inc) =>
+          inc.id === selectedIncident?.id
+            ? { ...inc, status: res.incidentStatus as any }
+            : inc
+        )
+      );
+    } catch (err) {
+      setActivationError((err as Error).message || 'Failed to rollback adapter.');
+    } finally {
+      setRollingBack(false);
     }
   };
 
@@ -1192,6 +1274,140 @@ export function App() {
                         </div>
                       </div>
                     )}
+
+                    {/* Ticket 07: Activation, Replay & Rollback Controls (A12, A13) */}
+                    <div className="pt-3 border-t border-[#30363d] space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-bold text-[#f0f6fc]">
+                            ADAPTER LIFECYCLE & RECOVERY (A12 / A13)
+                          </span>
+                          {selectedIncident.recoveryStatus && (
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs font-bold border ${
+                                selectedIncident.recoveryStatus === 'recovered'
+                                  ? 'bg-[#238636]/20 text-[#3fb950] border-[#238636]/40'
+                                  : selectedIncident.recoveryStatus === 'rolled_back'
+                                  ? 'bg-[#d29922]/20 text-[#d29922] border-[#d29922]/40'
+                                  : 'bg-[#8b949e]/20 text-[#8b949e] border-[#30363d]'
+                              }`}
+                            >
+                              {selectedIncident.recoveryStatus.replace('_', ' ').toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleActivatePatch(
+                                (repairProposal || selectedIncident.proposals?.[0])!.patch.id,
+                                (repairProposal || selectedIncident.proposals?.[0])!.patch.hash
+                              )
+                            }
+                            disabled={
+                              activatingPatch ||
+                              rollingBack ||
+                              !(validationRun || selectedIncident.validationRuns?.[0]) ||
+                              (validationRun || selectedIncident.validationRuns?.[0])?.eligibility !== 'eligible'
+                            }
+                            className="px-3 py-1 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center space-x-1"
+                          >
+                            <span>
+                              {activatingPatch ? 'Activating & Replaying...' : 'Activate Adapter (A12)'}
+                            </span>
+                          </button>
+
+                          {((activeAdapter && activeAdapter.parentVersion) ||
+                            (selectedIncident.activeAdapter && selectedIncident.activeAdapter.parentVersion)) && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleRollbackPatch(
+                                  (repairProposal || selectedIncident.proposals?.[0])!.patch.id
+                                )
+                              }
+                              disabled={rollingBack || activatingPatch}
+                              className="px-3 py-1 bg-[#da3633] hover:bg-[#f85149] disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center space-x-1"
+                            >
+                              <span>{rollingBack ? 'Rolling back...' : 'Rollback to Parent (A13)'}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {activationError && (
+                        <div className="p-2 bg-[#da3633]/20 border border-[#da3633] text-[#f85149] rounded text-xs">
+                          {activationError}
+                        </div>
+                      )}
+
+                      {/* Active Adapter Inspector */}
+                      {(activeAdapter || selectedIncident.activeAdapter) && (
+                        <div className="p-3 bg-[#0d1117] border border-[#30363d] rounded space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-[#8b949e]">
+                              ACTIVE ADAPTER:{' '}
+                              <strong className="text-[#79c0ff]">
+                                {(activeAdapter || selectedIncident.activeAdapter)!.id}
+                              </strong>{' '}
+                              (v{(activeAdapter || selectedIncident.activeAdapter)!.version}
+                              {(activeAdapter || selectedIncident.activeAdapter)!.parentVersion
+                                ? `, parent: v${(activeAdapter || selectedIncident.activeAdapter)!.parentVersion}`
+                                : ''}
+                              )
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                (activeAdapter || selectedIncident.activeAdapter)!.status === 'active'
+                                  ? 'bg-[#238636]/20 text-[#3fb950]'
+                                  : (activeAdapter || selectedIncident.activeAdapter)!.status === 'rolled_back'
+                                  ? 'bg-[#d29922]/20 text-[#d29922]'
+                                  : 'bg-[#8b949e]/20 text-[#8b949e]'
+                              }`}
+                            >
+                              {(activeAdapter || selectedIncident.activeAdapter)!.status.replace('_', ' ').toUpperCase()}
+                            </span>
+                          </div>
+
+                          {/* Post-Activation Workflow Replay Details */}
+                          {postActivationReplay && (
+                            <div className="pt-2 border-t border-[#21262d] space-y-1">
+                              <span className="text-[#8b949e] text-[10px] font-bold block">
+                                POST-ACTIVATION REPLAY VERIFICATION (FR-VAL-08):
+                              </span>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+                                {postActivationReplay.replays.map((rep) => (
+                                  <div
+                                    key={rep.workflowId}
+                                    className="p-2 bg-[#161b22] border border-[#21262d] rounded flex items-center justify-between"
+                                  >
+                                    <div>
+                                      <span className="text-[#79c0ff] font-semibold">
+                                        {rep.workflowId}
+                                      </span>
+                                      <span className="text-[#8b949e] text-[10px] block">
+                                        {rep.invariantResult.details}
+                                      </span>
+                                    </div>
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                        rep.status === 'passed'
+                                          ? 'bg-[#238636]/20 text-[#3fb950]'
+                                          : 'bg-[#da3633]/20 text-[#f85149]'
+                                      }`}
+                                    >
+                                      {rep.status.toUpperCase()}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}

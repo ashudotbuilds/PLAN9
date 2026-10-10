@@ -681,6 +681,202 @@ describe('Web App - Operational Canvas & Operator Onboarding', () => {
       expect(screen.getByText(/stubbed \(0 live transmission\)/)).toBeInTheDocument();
     });
   });
+
+  it('Ticket 07: activates validated adapter with replay verification and executes safe rollback in UI', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        id: 'prj_test_1',
+        name: 'Test Project',
+        environments: ['development'],
+        createdAt: '2026-10-11T00:00:00.000Z'
+      }
+    ]);
+    vi.spyOn(apiClient, 'getDemoState').mockResolvedValue({
+      projectId: 'prj_test_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      status: 'ready',
+      providers: [],
+      readEdges: [],
+      incidents: [
+        {
+          id: 'inc_123',
+          projectId: 'prj_test_1',
+          environment: 'development',
+          sessionId: 'sess_1',
+          provider: 'users',
+          endpoint: '/users/:id',
+          fingerprint: 'fingerprint_123',
+          status: 'validated',
+          severity: 'high',
+          summary: "Breaking schema change: provider field 'name' renamed to 'display_name'",
+          detectedAt: '2026-10-11T01:30:00.000Z',
+          evidenceStrength: 'confirmed',
+          affectedWorkflows: ['welcome_email', 'customer_profile']
+        }
+      ],
+      activeScenarios: ['users.field-rename']
+    });
+
+    vi.spyOn(apiClient, 'getIncident').mockResolvedValue({
+      id: 'inc_123',
+      projectId: 'prj_test_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      provider: 'users',
+      endpoint: '/users/:id',
+      fingerprint: 'fingerprint_123',
+      status: 'validated',
+      severity: 'high',
+      summary: "Breaking schema change: provider field 'name' renamed to 'display_name'",
+      detectedAt: '2026-10-11T01:30:00.000Z',
+      evidenceStrength: 'confirmed',
+      affectedWorkflows: ['welcome_email', 'customer_profile'],
+      findings: [],
+      beforeEvidence: {},
+      afterEvidence: {},
+      failedWorkflows: [],
+      proposals: [
+        {
+          id: 'prop_123',
+          incidentId: 'inc_123',
+          source: 'deterministic_fallback',
+          recommendation: 'recommended',
+          confidence: 0.95,
+          patch: {
+            id: 'patch_val_123',
+            hash: 'hash_val_123',
+            provider: 'users',
+            targetEntity: 'CanonicalUser',
+            version: 2,
+            rules: [
+              {
+                op: 'coalesce',
+                sources: ['display_name', 'name'],
+                targetField: 'displayName'
+              }
+            ],
+            preservedFields: ['id'],
+            diff: 'diff'
+          },
+          uncertainties: [],
+          evidenceRefs: ['inc_123'],
+          requiredChecks: ['baseline_replay', 'shadow_canary'],
+          createdAt: '2026-10-11T02:00:00.000Z',
+          auditEventId: 'aud_prop_123'
+        }
+      ],
+      validationRuns: [
+        {
+          id: 'val_run_123',
+          patchId: 'patch_val_123',
+          patchHash: 'hash_val_123',
+          incidentId: 'inc_123',
+          status: 'passed',
+          eligibility: 'eligible',
+          gates: [
+            { gateId: 'read_only_endpoint', status: 'passed', details: 'Endpoint verified read-only GET' }
+          ],
+          workflowOutcomes: [
+            { workflowId: 'welcome_email', status: 'passed', details: 'Recipient matches', sideEffectStubbed: true }
+          ],
+          evaluatedAt: '2026-10-11T02:40:00.000Z',
+          auditEventId: 'aud_val_run_123'
+        }
+      ],
+      auditEventId: 'aud_inc_1'
+    });
+
+    const activateSpy = vi.spyOn(apiClient, 'activatePatch').mockResolvedValue({
+      activeAdapter: {
+        id: 'adp_v2',
+        version: 2,
+        parentVersion: 1,
+        patchId: 'patch_val_123',
+        patchHash: 'hash_val_123',
+        provider: 'users',
+        targetEntity: 'CanonicalUser',
+        rules: [{ op: 'coalesce', sources: ['display_name', 'name'], targetField: 'displayName' }],
+        preservedFields: ['id'],
+        status: 'active',
+        activatedAt: '2026-10-11T02:50:00.000Z'
+      },
+      postActivationReplay: {
+        status: 'passed',
+        replays: [
+          {
+            workflowId: 'welcome_email',
+            status: 'passed',
+            result: { type: 'send_email', recipientName: 'Aarav' },
+            invariantResult: { passed: true, details: 'recipientName non-empty' },
+            readFields: ['user.displayName'],
+            auditEventId: 'aud_replay_1'
+          }
+        ],
+        details: 'Post-activation replay verified.'
+      },
+      incidentStatus: 'recovered',
+      recoveryStatus: 'recovered',
+      auditEventId: 'aud_act_123'
+    });
+
+    const rollbackSpy = vi.spyOn(apiClient, 'rollbackPatch').mockResolvedValue({
+      restoredAdapter: {
+        id: 'adp_v1',
+        version: 1,
+        parentVersion: null,
+        patchId: 'patch_v1_baseline',
+        patchHash: 'hash_v1_baseline',
+        provider: 'users',
+        targetEntity: 'CanonicalUser',
+        rules: [{ op: 'rename', sources: ['name'], targetField: 'displayName' }],
+        preservedFields: ['id'],
+        status: 'active',
+        activatedAt: '2026-10-11T02:55:00.000Z'
+      },
+      incidentStatus: 'rolled_back',
+      auditEventId: 'aud_roll_123'
+    });
+
+    render(<App />);
+
+    // Click incident to open inspection drawer
+    const incidentCard = await screen.findByText(/Breaking schema change: provider field 'name' renamed/);
+    fireEvent.click(incidentCard);
+
+    // Verify Activate button is visible
+    const activateBtn = await screen.findByRole('button', { name: /activate adapter \(a12\)/i });
+    expect(activateBtn).toBeEnabled();
+
+    // Click Activate
+    fireEvent.click(activateBtn);
+    expect(activateSpy).toHaveBeenCalled();
+
+    // Verify RECOVERED badge and active adapter v2 rendered
+    await waitFor(() => {
+      expect(screen.getByText('RECOVERED')).toBeInTheDocument();
+      expect(screen.getByText('adp_v2')).toBeInTheDocument();
+      expect(screen.getByText(/POST-ACTIVATION REPLAY VERIFICATION/)).toBeInTheDocument();
+    });
+
+    // Verify Rollback button is now present and clickable
+    const rollbackBtn = screen.getByRole('button', { name: /rollback to parent \(a13\)/i });
+    expect(rollbackBtn).toBeEnabled();
+
+    // Click Rollback
+    fireEvent.click(rollbackBtn);
+    expect(rollbackSpy).toHaveBeenCalled();
+
+    // Verify ROLLED BACK badge rendered and adapter restored to v1
+    await waitFor(() => {
+      expect(screen.getByText('ROLLED BACK')).toBeInTheDocument();
+      expect(screen.getByText('adp_v1')).toBeInTheDocument();
+    });
+  });
 });
 
 

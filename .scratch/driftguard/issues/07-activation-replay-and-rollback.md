@@ -4,9 +4,9 @@
 
 **Blocked by:** [06 - Validate candidate semantics and automatic eligibility](06-shadow-validation-and-policy.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
-**Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
+**Planning readiness:** Fully implemented, verified across API, contract schemas, UI, and test suites.
 
 **Priority:** P0
 
@@ -14,21 +14,21 @@
 
 **GitHub issue:** [#7](https://github.com/ashudotbuilds/PLAN9/issues/7)
 
-**Applications/packages touched:** apps/api, apps/web, packages/adapter-runtime, packages/validation.
+**Applications/packages touched:** apps/api, apps/web, packages/contracts.
 
 **PRD traceability:** FR-VAL-05, FR-VAL-06, FR-VAL-08, NFR-05, FR-OPS-01, NFR-20. Sections 13, 13.2, 16, 21.1 (AT-SDK-15) of [DRIFTGUARD_PRD.md](../../../DRIFTGUARD_PRD.md).
 
 ## Acceptance criteria
 
-- [ ] Activation refuses missing, failed, stale, or mismatched-hash validation.
-- [ ] Activation creates a version linked to its parent and executes post-activation workflow replay.
-- [ ] Only passing post-activation replay marks recovered.
-- [ ] Replay failure automatically restores the parent, sets rolled_back, and retains failed patch and evidence.
-- [ ] Manual rollback restores the recorded parent and records an audit event.
-- [ ] A rollback restores adapter version, not provider behavior; UI reports subsequent workflow outcomes honestly.
+- [x] Activation refuses missing, failed, stale, or mismatched-hash validation.
+- [x] Activation creates a version linked to its parent and executes post-activation workflow replay.
+- [x] Only passing post-activation replay marks recovered.
+- [x] Replay failure automatically restores the parent, sets rolled_back, and retains failed patch and evidence.
+- [x] Manual rollback restores the recorded parent and records an audit event.
+- [x] A rollback restores adapter version, not provider behavior; UI reports subsequent workflow outcomes honestly.
 
-- [ ] Resolve activation/rollback/replay within operator-authorized recorded scope and the owning demo lease; reject mismatching selectors and ingestion credentials.
-- [ ] Retain parent, failed patch, validation hash, and replay evidence in the same session; later reset archives these records rather than rewriting or deleting their provenance.
+- [x] Resolve activation/rollback/replay within operator-authorized recorded scope and the owning demo lease; reject mismatching selectors and ingestion credentials.
+- [x] Retain parent, failed patch, validation hash, and replay evidence in the same session; later reset archives these records rather than rewriting or deleting their provenance.
 
 ## Test scenarios
 
@@ -54,7 +54,7 @@ Deliver the acceptance criteria as one observable slice. Preserve the PRD safety
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.

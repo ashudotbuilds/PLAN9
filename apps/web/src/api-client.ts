@@ -31,7 +31,11 @@ import {
   ProposeRepairResponse,
   ProposeRepairResponseSchema,
   ValidatePatchResponse,
-  ValidatePatchResponseSchema
+  ValidatePatchResponseSchema,
+  ActivatePatchResponse,
+  ActivatePatchResponseSchema,
+  RollbackPatchResponse,
+  RollbackPatchResponseSchema
 } from '@driftguard/contracts';
 
 
@@ -375,8 +379,54 @@ export class ApiClient {
     const data = await res.json();
     return ValidatePatchResponseSchema.parse(data);
   }
+
+  // Activate Adapter & Safe Rollback (A12, A13)
+  async activatePatch(
+    patchId: string,
+    projectId: string,
+    environment: ProjectEnvironment,
+    patchHash?: string
+  ): Promise<ActivatePatchResponse> {
+    const res = await fetch(`${this.apiBase}/patches/${patchId}/activate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ projectId, environment, patchHash })
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error?.message || `Failed to activate patch: ${res.status}`);
+    }
+
+    const data = await res.json();
+    return ActivatePatchResponseSchema.parse(data);
+  }
+
+  async rollbackPatch(
+    patchId: string,
+    projectId: string,
+    environment: ProjectEnvironment
+  ): Promise<RollbackPatchResponse> {
+    const res = await fetch(`${this.apiBase}/patches/${patchId}/rollback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ projectId, environment })
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error?.message || `Failed to rollback patch: ${res.status}`);
+    }
+
+    const data = await res.json();
+    return RollbackPatchResponseSchema.parse(data);
+  }
 }
-
-
 
 export const apiClient = new ApiClient();

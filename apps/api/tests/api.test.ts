@@ -1204,6 +1204,251 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(res.json().error.code).toBe('PATCH_NOT_FOUND');
     });
   });
+
+  describe('Ticket 07: A12 Patch Activation, Post-Activation Replay & A13 Safe Rollback', () => {
+    async function setupValidatedPatchApp() {
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+
+      let isRenamed = false;
+      const mockFetch = vi.fn(async (url: string | URL | Request) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/scenarios/users.field-rename/inject')) {
+          isRenamed = true;
+          return { ok: true, json: async () => ({ ok: true, activeScenarios: ['users.field-rename'] }) };
+        }
+        if (urlStr.includes('/users/')) {
+          const id = urlStr.split('/users/')[1]?.split('?')[0] || 'u-123';
+          const nameMap: Record<string, string> = { 'u-123': 'Aarav', 'u-456': 'Meera', 'u-789': 'Kabir' };
+          const name = nameMap[id] || 'Aarav';
+          return {
+            ok: true,
+            json: async () => (isRenamed ? { id, display_name: name } : { id, name })
+          };
+        }
+        if (urlStr.includes('/inventory/items')) {
+          return { ok: true, json: async () => ({ items: [{ sku: 'WIDGET-A', quantity: 15 }] }) };
+        }
+        if (urlStr.includes('/shipping/estimate')) {
+          return { ok: true, json: async () => ({ estimated_delivery_date: '2026-10-18' }) };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      await baselineService.captureBaseline('prj_demo_default', 'development', 'sess_1');
+
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      await incidentService.injectScenario('users.field-rename', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const propRes = incidentService.proposeRepair(incidentId, 'prj_demo_default', 'development', 'sess_1');
+      const patchId = propRes.proposal.patch.id;
+      const patchHash = propRes.proposal.patch.hash;
+
+      // Validate the patch
+      const valRes = await incidentService.validatePatch(patchId, 'prj_demo_default', 'development', patchHash);
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+      return { testApp, incidentId, patchId, patchHash, incidentService, baselineService };
+    }
+
+    it('requires operator authentication for activation and rollback', async () => {
+      const resAct = await app.inject({
+        method: 'POST',
+        url: '/api/patches/patch_1/activate',
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+      expect(resAct.statusCode).toBe(401);
+
+      const resRoll = await app.inject({
+        method: 'POST',
+        url: '/api/patches/patch_1/rollback',
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+      expect(resRoll.statusCode).toBe(401);
+    });
+
+    it('activates validated patch, executes post-activation replay, and transitions incident to recovered (A12)', async () => {
+      const { testApp, patchId, patchHash, incidentId } = await setupValidatedPatchApp();
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${patchId}/activate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', patchHash }
+      });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+      expect(data.activeAdapter).toBeDefined();
+      expect(data.activeAdapter.version).toBe(2);
+      expect(data.activeAdapter.parentVersion).toBe(1);
+      expect(data.activeAdapter.status).toBe('active');
+      expect(data.activeAdapter.patchId).toBe(patchId);
+      expect(data.recoveryStatus).toBe('recovered');
+      expect(data.incidentStatus).toBe('recovered');
+      expect(data.postActivationReplay.status).toBe('passed');
+      expect(data.postActivationReplay.replays).toHaveLength(2);
+
+      // Verify incident detail now reflects recovery and active adapter
+      const incRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/incidents/${incidentId}?projectId=prj_demo_default&environment=development`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      const incDetail = incRes.json().incident;
+      expect(incDetail.status).toBe('recovered');
+      expect(incDetail.recoveryStatus).toBe('recovered');
+      expect(incDetail.activeAdapter.version).toBe(2);
+    });
+
+    it('rejects activation if patch has not been validated with 409 PATCH_NOT_VALIDATED', async () => {
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      let isRenamed = false;
+      const mockFetch = vi.fn(async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.includes('/scenarios/users.field-rename/inject')) {
+          isRenamed = true;
+          return { ok: true, json: async () => ({ ok: true, activeScenarios: ['users.field-rename'] }) };
+        }
+        if (u.includes('/users/')) {
+          const id = u.split('/users/')[1]?.split('?')[0] || 'u-123';
+          const nameMap: Record<string, string> = { 'u-123': 'Aarav', 'u-456': 'Meera', 'u-789': 'Kabir' };
+          const name = nameMap[id] || 'Aarav';
+          return { ok: true, json: async () => (isRenamed ? { id, display_name: name } : { id, name }) };
+        }
+        if (u.includes('/inventory/items')) {
+          return { ok: true, json: async () => ({ items: [{ sku: 'WIDGET-A', quantity: 15 }] }) };
+        }
+        if (u.includes('/shipping/estimate')) {
+          return { ok: true, json: async () => ({ estimated_delivery_date: '2026-10-18' }) };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      await baselineService.captureBaseline('prj_demo_default', 'development', 'sess_1');
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      await incidentService.injectScenario('users.field-rename', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const propRes = incidentService.proposeRepair(obsRes.incident!.id, 'prj_demo_default', 'development', 'sess_1');
+      const patchId = propRes.proposal.patch.id;
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${patchId}/activate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe('PATCH_NOT_VALIDATED');
+    });
+
+    it('rejects activation if patch hash does not match candidate hash with 409 PATCH_HASH_MISMATCH', async () => {
+      const { testApp, patchId } = await setupValidatedPatchApp();
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${patchId}/activate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', patchHash: 'corrupted_or_different_hash' }
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe('PATCH_HASH_MISMATCH');
+    });
+
+    it('returns 404 PATCH_NOT_FOUND when activating non-existent patch', async () => {
+      const { testApp } = await setupValidatedPatchApp();
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/patches/patch_nonexistent/activate',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error.code).toBe('PATCH_NOT_FOUND');
+    });
+
+    it('rolls back active adapter to parent v1 and updates incident status (A13)', async () => {
+      const { testApp, patchId, patchHash, incidentId } = await setupValidatedPatchApp();
+
+      // First activate
+      await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${patchId}/activate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', patchHash }
+      });
+
+      // Rollback via /api/patches/:patchId/rollback
+      const rollRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${patchId}/rollback`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+
+      expect(rollRes.statusCode).toBe(200);
+      const rollData = rollRes.json();
+      expect(rollData.restoredAdapter.version).toBe(1);
+      expect(rollData.incidentStatus).toBe('rolled_back');
+
+      // Check incident reflects rolled_back
+      const incRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/incidents/${incidentId}?projectId=prj_demo_default&environment=development`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      const incDetail = incRes.json().incident;
+      expect(incDetail.status).toBe('rolled_back');
+      expect(incDetail.recoveryStatus).toBe('rolled_back');
+      expect(incDetail.activeAdapter.version).toBe(1);
+    });
+
+    it('supports A13 alias /api/adapters/:adapterId/rollback', async () => {
+      const { testApp, patchId, patchHash } = await setupValidatedPatchApp();
+
+      await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${patchId}/activate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', patchHash }
+      });
+
+      const rollRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/adapters/adp_v2/rollback',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+
+      expect(rollRes.statusCode).toBe(200);
+      expect(rollRes.json().restoredAdapter.version).toBe(1);
+    });
+
+    it('rejects rollback if no parent adapter exists with 409 NO_ROLLBACK_PARENT', async () => {
+      const { testApp, patchId } = await setupValidatedPatchApp();
+
+      // Try rollback without prior activation (no active adapter with parentVersion)
+      const rollRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${patchId}/rollback`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+
+      expect(rollRes.statusCode).toBe(409);
+      expect(rollRes.json().error.code).toBe('NO_ROLLBACK_PARENT');
+    });
+  });
 });
 
 

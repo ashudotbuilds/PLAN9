@@ -12,7 +12,9 @@ import {
   WorkflowIdSchema,
   ReplayWorkflowRequestSchema,
   InjectScenarioRequestSchema,
-  RunObservationsRequestSchema
+  RunObservationsRequestSchema,
+  ActivatePatchRequestSchema,
+  RollbackPatchRequestSchema
 } from '@driftguard/contracts';
 import { randomUUID } from 'node:crypto';
 import { OperatorAuthService } from './services/operator-auth-service.js';
@@ -481,6 +483,52 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     const candidatePatchHash = body.patchHash || query.patchHash;
 
     const result = await incidentService.validatePatch(patchId, projectId, environment, candidatePatchHash);
+    return reply.status(200).send(result);
+  });
+
+  // A12: Activate Validated Patch
+  app.post('/api/patches/:patchId/activate', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const { patchId } = request.params as { patchId: string };
+    const query = request.query as { projectId?: string; environment?: string; patchHash?: string };
+    const body = (request.body as { projectId?: string; environment?: string; patchHash?: string } | undefined) || {};
+
+    const envCandidate = body.environment || query.environment;
+    const envParsed = envCandidate ? ProjectEnvironmentSchema.safeParse(envCandidate) : null;
+    const environment = envParsed && envParsed.success ? envParsed.data : 'development';
+    const projectId = body.projectId || query.projectId || 'prj_demo_default';
+    const candidatePatchHash = body.patchHash || query.patchHash;
+
+    const result = await incidentService.activatePatch(patchId, projectId, environment, candidatePatchHash);
+    return reply.status(200).send(result);
+  });
+
+  // A13: Rollback Active Adapter
+  app.post('/api/patches/:patchId/rollback', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const { patchId } = request.params as { patchId: string };
+    const query = request.query as { projectId?: string; environment?: string };
+    const body = (request.body as { projectId?: string; environment?: string } | undefined) || {};
+
+    const envCandidate = body.environment || query.environment;
+    const envParsed = envCandidate ? ProjectEnvironmentSchema.safeParse(envCandidate) : null;
+    const environment = envParsed && envParsed.success ? envParsed.data : 'development';
+    const projectId = body.projectId || query.projectId || 'prj_demo_default';
+
+    const result = await incidentService.rollbackPatch(patchId, projectId, environment);
+    return reply.status(200).send(result);
+  });
+
+  // A13 Alias: Rollback Adapter by adapterId
+  app.post('/api/adapters/:adapterId/rollback', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const { adapterId } = request.params as { adapterId: string };
+    const query = request.query as { projectId?: string; environment?: string };
+    const body = (request.body as { projectId?: string; environment?: string } | undefined) || {};
+
+    const envCandidate = body.environment || query.environment;
+    const envParsed = envCandidate ? ProjectEnvironmentSchema.safeParse(envCandidate) : null;
+    const environment = envParsed && envParsed.success ? envParsed.data : 'development';
+    const projectId = body.projectId || query.projectId || 'prj_demo_default';
+
+    const result = await incidentService.rollbackPatch(adapterId, projectId, environment);
     return reply.status(200).send(result);
   });
 

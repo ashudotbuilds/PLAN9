@@ -539,6 +539,8 @@ export const IncidentDetailSchema = z.object({
   impactAnalysis: AnalyzeImpactResponseSchema.optional(),
   proposals: z.array(RepairProposalSchema).optional(),
   validationRuns: z.array(z.lazy(() => ValidationRunSchema)).optional(),
+  activeAdapter: z.lazy(() => ActiveAdapterSchema).optional(),
+  recoveryStatus: z.enum(['recovered', 'rolled_back', 'pending']).optional(),
   auditEventId: z.string()
 });
 export type IncidentDetail = z.infer<typeof IncidentDetailSchema>;
@@ -627,5 +629,54 @@ export const RunObservationsResponseSchema = z.object({
 });
 export type RunObservationsResponse = z.infer<typeof RunObservationsResponseSchema>;
 
+// Ticket 07: Activation, Replay & Rollback Schemas (A12, A13)
+export const ActiveAdapterSchema = z.object({
+  id: z.string(),
+  version: z.number().int().positive(),
+  parentVersion: z.number().int().positive().nullable(),
+  patchId: z.string(),
+  patchHash: z.string(),
+  provider: z.string(),
+  targetEntity: z.string(),
+  rules: z.array(AdapterRuleSchema),
+  preservedFields: z.array(z.string()),
+  status: z.enum(['active', 'superseded', 'rolled_back']),
+  activatedAt: z.string().datetime()
+});
+export type ActiveAdapter = z.infer<typeof ActiveAdapterSchema>;
 
+export const PostActivationReplayOutcomeSchema = z.object({
+  status: z.enum(['passed', 'failed']),
+  replays: z.array(ReplayWorkflowResponseSchema),
+  details: z.string()
+});
+export type PostActivationReplayOutcome = z.infer<typeof PostActivationReplayOutcomeSchema>;
 
+export const ActivatePatchRequestSchema = z.object({
+  projectId: z.string().min(1),
+  environment: ProjectEnvironmentSchema,
+  patchHash: z.string().optional()
+});
+export type ActivatePatchRequest = z.infer<typeof ActivatePatchRequestSchema>;
+
+export const ActivatePatchResponseSchema = z.object({
+  activeAdapter: ActiveAdapterSchema,
+  postActivationReplay: PostActivationReplayOutcomeSchema,
+  incidentStatus: z.string(),
+  recoveryStatus: z.enum(['recovered', 'rolled_back', 'pending']),
+  auditEventId: z.string()
+});
+export type ActivatePatchResponse = z.infer<typeof ActivatePatchResponseSchema>;
+
+export const RollbackPatchRequestSchema = z.object({
+  projectId: z.string().min(1),
+  environment: ProjectEnvironmentSchema
+});
+export type RollbackPatchRequest = z.infer<typeof RollbackPatchRequestSchema>;
+
+export const RollbackPatchResponseSchema = z.object({
+  restoredAdapter: ActiveAdapterSchema,
+  incidentStatus: z.string(),
+  auditEventId: z.string()
+});
+export type RollbackPatchResponse = z.infer<typeof RollbackPatchResponseSchema>;
