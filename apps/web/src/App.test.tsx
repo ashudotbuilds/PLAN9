@@ -991,6 +991,254 @@ describe('Web App - Operational Canvas & Operator Onboarding', () => {
       expect(screen.getByText(/validating \(completed\)/)).toBeInTheDocument();
     });
   });
+
+  it('Ticket 09: project and environment changes clear stale incident and recovery run views', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        id: 'prj_1',
+        name: 'Project 1',
+        environments: ['development', 'production'],
+        createdAt: '2026-10-11T00:00:00.000Z'
+      },
+      {
+        id: 'prj_2',
+        name: 'Project 2',
+        environments: ['development', 'production'],
+        createdAt: '2026-10-11T00:00:00.000Z'
+      }
+    ]);
+    vi.spyOn(apiClient, 'listProviders').mockResolvedValue([
+      { id: 'users', name: 'Users API', baseUrl: 'http://127.0.0.1:4001', status: 'ready' },
+      { id: 'inventory', name: 'Inventory API', baseUrl: 'http://127.0.0.1:4001', status: 'ready' }
+    ]);
+    vi.spyOn(apiClient, 'getDemoState').mockResolvedValue({
+      projectId: 'prj_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      status: 'ready',
+      providers: [],
+      incidents: [
+        {
+          id: 'inc_stale_test',
+          projectId: 'prj_1',
+          environment: 'development',
+          sessionId: 'sess_1',
+          provider: 'users',
+          endpoint: '/users/:id',
+          fingerprint: 'fp_stale',
+          status: 'detected',
+          severity: 'high',
+          summary: 'Stale Incident Test Summary',
+          detectedAt: '2026-10-11T01:30:00.000Z',
+          evidenceStrength: 'confirmed',
+          affectedWorkflows: ['welcome_email']
+        }
+      ]
+    });
+    vi.spyOn(apiClient, 'getIncident').mockResolvedValue({
+      id: 'inc_stale_test',
+      projectId: 'prj_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      provider: 'users',
+      endpoint: '/users/:id',
+      fingerprint: 'fp_stale',
+      status: 'detected',
+      severity: 'high',
+      summary: 'Stale Incident Test Summary',
+      detectedAt: '2026-10-11T01:30:00.000Z',
+      evidenceStrength: 'confirmed',
+      affectedWorkflows: ['welcome_email'],
+      findings: [],
+      beforeEvidence: {},
+      afterEvidence: {},
+      failedWorkflows: [],
+      auditEventId: 'aud_stale_1'
+    });
+
+    render(<App />);
+
+    // Click incident to open inspection drawer
+    const card = await screen.findByText('Stale Incident Test Summary');
+    fireEvent.click(card);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Incident Evidence Inspection \(A08\) — inc_stale_test/)).toBeInTheDocument();
+    });
+
+    // Switch environment to production
+    const envSelect = screen.getByLabelText(/Environment Scope/i);
+    fireEvent.change(envSelect, { target: { value: 'production' } });
+
+    // Stale incident inspection view must be cleared
+    await waitFor(() => {
+      expect(screen.queryByText(/Incident Evidence Inspection \(A08\) — inc_stale_test/)).not.toBeInTheDocument();
+    });
+  });
+
+  it('Ticket 09: renders Dependency Rail and Compact Audit Timeline with audit tracking', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        id: 'prj_1',
+        name: 'Project 1',
+        environments: ['development'],
+        createdAt: '2026-10-11T00:00:00.000Z'
+      }
+    ]);
+    vi.spyOn(apiClient, 'listProviders').mockResolvedValue([
+      { id: 'users', name: 'Users API', baseUrl: 'http://127.0.0.1:4001', status: 'ready' },
+      { id: 'inventory', name: 'Inventory API', baseUrl: 'http://127.0.0.1:4001', status: 'ready' },
+      { id: 'shipping', name: 'Shipping API', baseUrl: 'http://127.0.0.1:4001', status: 'ready' }
+    ]);
+    vi.spyOn(apiClient, 'getDemoState').mockResolvedValue({
+      projectId: 'prj_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      status: 'ready',
+      providers: [],
+      activeScenarios: ['users.field-rename'],
+      baseline: {
+        id: 'base_1',
+        projectId: 'prj_1',
+        environment: 'development',
+        sessionId: 'sess_1',
+        version: 1,
+        fingerprint: 'fp_123',
+        capturedAt: '2026-10-11T00:00:00.000Z',
+        status: 'captured',
+        fixtures: { usersCount: 3, inventoryItemsCount: 3, shippingCalculated: true }
+      }
+    });
+
+    render(<App />);
+
+    // Check Dependency Rail renders providers and active scenarios
+    await waitFor(() => {
+      expect(screen.getByText('Dependency Rail (A14)')).toBeInTheDocument();
+      expect(screen.getByText('3 Registered Providers')).toBeInTheDocument();
+      expect(screen.getAllByText('users.field-rename').length).toBeGreaterThan(0);
+    });
+
+    // Check Compact Audit Timeline renders
+    expect(screen.getByText('Compact Audit Timeline (NFR-08)')).toBeInTheDocument();
+    expect(screen.getByText('aud_seed_default')).toBeInTheDocument();
+    expect(screen.getByText('IMMUTABLE AUDIT LOG')).toBeInTheDocument();
+  });
+
+  it('Ticket 09: displays safe re-authentication notice on session expiry or origin rejection', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockRejectedValue(new Error('UNAUTHENTICATED'));
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Session expired or Origin rejected. Please re-authenticate as operator./)).toBeInTheDocument();
+      expect(screen.getByText('AUTHENTICATION NOTICE:')).toBeInTheDocument();
+    });
+  });
+
+  it('Ticket 09: renders 3-column Causal Impact Trace with evidence maturity', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        id: 'prj_1',
+        name: 'Project 1',
+        environments: ['development'],
+        createdAt: '2026-10-11T00:00:00.000Z'
+      }
+    ]);
+    vi.spyOn(apiClient, 'getDemoState').mockResolvedValue({
+      projectId: 'prj_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      status: 'ready',
+      providers: [],
+      incidents: [
+        {
+          id: 'inc_causal_1',
+          projectId: 'prj_1',
+          environment: 'development',
+          sessionId: 'sess_1',
+          provider: 'users',
+          endpoint: '/users/:id',
+          fingerprint: 'fp_causal',
+          status: 'detected',
+          severity: 'high',
+          summary: "Breaking schema change: provider field 'name' renamed",
+          detectedAt: '2026-10-11T01:30:00.000Z',
+          evidenceStrength: 'confirmed',
+          affectedWorkflows: ['welcome_email']
+        }
+      ]
+    });
+    vi.spyOn(apiClient, 'getIncident').mockResolvedValue({
+      id: 'inc_causal_1',
+      projectId: 'prj_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      provider: 'users',
+      endpoint: '/users/:id',
+      fingerprint: 'fp_causal',
+      status: 'detected',
+      severity: 'high',
+      summary: "Breaking schema change: provider field 'name' renamed",
+      detectedAt: '2026-10-11T01:30:00.000Z',
+      evidenceStrength: 'confirmed',
+      affectedWorkflows: ['welcome_email'],
+      findings: [],
+      beforeEvidence: {},
+      afterEvidence: {},
+      failedWorkflows: [],
+      auditEventId: 'aud_inc_causal_1',
+      impactAnalysis: {
+        incidentId: 'inc_causal_1',
+        status: 'completed',
+        analyzedAt: '2026-10-11T01:35:00.000Z',
+        auditEventId: 'aud_imp_1',
+        affectedWorkflows: [
+          {
+            workflowId: 'welcome_email',
+            status: 'affected',
+            reason: 'Missing recipientName',
+            canonicalField: 'user.displayName',
+            changedBehavior: 'Cannot read property name',
+            invariant: 'recipientName non-empty',
+            provenance: 'runtime_read',
+            evidenceRefs: ['obs_1']
+          }
+        ],
+        unaffectedWorkflows: [],
+        unknownWorkflows: [],
+        tracePaths: []
+      }
+    });
+
+    render(<App />);
+
+    const card = await screen.findByText(/Breaking schema change: provider field 'name' renamed/);
+    fireEvent.click(card);
+
+    await waitFor(() => {
+      expect(screen.getByText('CAUSAL IMPACT TRACE (PRD 17 / AT-SDK-11)')).toBeInTheDocument();
+      expect(screen.getByText('1. UPSTREAM PROVIDER CHANGE')).toBeInTheDocument();
+      expect(screen.getByText('2. DOWNSTREAM CLIENT / ADAPTER')).toBeInTheDocument();
+      expect(screen.getByText('3. AFFECTED WORKFLOWS')).toBeInTheDocument();
+    });
+  });
 });
 
 

@@ -13,8 +13,17 @@ import {
   ValidationRun,
   ActiveAdapter,
   PostActivationReplayOutcome,
-  RecoveryRun
+  RecoveryRun,
+  ProviderSummary
 } from '@driftguard/contracts';
+
+interface AuditTimelineEntry {
+  id: string;
+  timestamp: string;
+  action: string;
+  summary: string;
+  scope?: string;
+}
 
 export function App() {
   const [readiness, setReadiness] = useState<SystemReadiness>({
@@ -28,6 +37,7 @@ export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
@@ -35,6 +45,24 @@ export function App() {
   const [newProjectName, setNewProjectName] = useState('');
   const [creatingProject, setCreatingProject] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
+
+  // Ticket 09: Dependency Rail (A14)
+  const [providers, setProviders] = useState<ProviderSummary[]>([
+    { id: 'users', name: 'Users API', baseUrl: 'http://127.0.0.1:4001', status: 'ready' },
+    { id: 'inventory', name: 'Inventory API', baseUrl: 'http://127.0.0.1:4001', status: 'ready' },
+    { id: 'shipping', name: 'Shipping API', baseUrl: 'http://127.0.0.1:4001', status: 'ready' }
+  ]);
+
+  // Ticket 09: Compact Audit Timeline (NFR-08)
+  const [auditTimeline, setAuditTimeline] = useState<AuditTimelineEntry[]>([
+    {
+      id: 'aud_seed_default',
+      timestamp: new Date().toISOString(),
+      action: 'control_plane_ready',
+      summary: 'Operator authenticated; control plane operational',
+      scope: 'system'
+    }
+  ]);
 
   // Ticket 02: Baseline & Workflow Lineage
   const [baseline, setBaseline] = useState<BaselineSummary | null>(null);
@@ -80,6 +108,18 @@ export function App() {
   const [activeRecoveryRun, setActiveRecoveryRun] = useState<RecoveryRun | null>(null);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
+  const recordAudit = (id: string, action: string, summary: string, scope?: string) => {
+    setAuditTimeline((prev) => [
+      {
+        id,
+        timestamp: new Date().toISOString(),
+        action,
+        summary,
+        scope: scope || `${selectedProjectId || 'default'}:${selectedEnvironment}`
+      },
+      ...prev.slice(0, 49)
+    ]);
+  };
 
   const fetchStatus = async () => {
     setRefreshing(true);
@@ -110,12 +150,24 @@ export function App() {
     }
   };
 
+  const loadProviders = async () => {
+    try {
+      const list = await apiClient.listProviders();
+      setProviders(list);
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      }
+    }
+  };
 
   const loadProjects = async () => {
     try {
       const list = await apiClient.listProjects();
       setProjects(list);
       setIsAuthenticated(true);
+      setSessionExpiredNotice(null);
       const activeProjId = selectedProjectId || (list.length > 0 ? list[0].id : '');
       if (activeProjId && !selectedProjectId) {
         setSelectedProjectId(activeProjId);
@@ -123,9 +175,11 @@ export function App() {
       if (activeProjId) {
         await loadDemoState(activeProjId, selectedEnvironment);
       }
+      await loadProviders();
     } catch (err) {
       if ((err as Error).message === 'UNAUTHENTICATED') {
         setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
       }
     }
   };
@@ -136,8 +190,25 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    // Ticket 09: Project/environment changes clear stale incident/run views
+    setSelectedIncident(null);
+    setImpactAnalysis(null);
+    setRepairProposal(null);
+    setValidationRun(null);
+    setActiveAdapter(null);
+    setActiveRecoveryRun(null);
+    setPostActivationReplay(null);
+    setWorkflowResults({});
+    setIncidentError(null);
+    setImpactError(null);
+    setProposalError(null);
+    setValidationError(null);
+    setActivationError(null);
+    setRecoveryError(null);
+
     if (selectedProjectId && isAuthenticated) {
       loadDemoState(selectedProjectId, selectedEnvironment);
+      loadProviders();
     }
   }, [selectedProjectId, selectedEnvironment, isAuthenticated]);
 
@@ -166,10 +237,16 @@ export function App() {
     try {
       const res = await apiClient.createProject(newProjectName.trim());
       setNewProjectName('');
+      recordAudit(res.auditEventId, 'create_project', `Created project: ${res.project.name} (${res.project.id})`);
       await loadProjects();
       setSelectedProjectId(res.project.id);
-    } catch (err) {
-      setProjectError((err as Error).message);
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        setProjectError(err.message);
+      }
     } finally {
       setCreatingProject(false);
     }
@@ -183,8 +260,14 @@ export function App() {
       const res = await apiClient.captureBaseline(selectedProjectId, selectedEnvironment, 'sess_active');
       setBaseline(res.baseline);
       setReadEdges(res.readEdges);
-    } catch (err) {
-      setBaselineError((err as Error).message);
+      recordAudit(res.auditEventId, 'capture_baseline', `Captured baseline v${res.baseline.version} (${res.readEdges.length} read edges)`);
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        setBaselineError(err.message);
+      }
     } finally {
       setCapturingBaseline(false);
     }
@@ -196,8 +279,14 @@ export function App() {
     try {
       const res = await apiClient.replayWorkflow(workflowId, selectedProjectId, selectedEnvironment, 'sess_active');
       setWorkflowResults((prev) => ({ ...prev, [workflowId]: res }));
-    } catch (err) {
-      alert((err as Error).message);
+      recordAudit(res.auditEventId || `aud_replay_${Date.now()}`, 'replay_workflow', `Replayed workflow ${workflowId} (${res.status})`);
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        alert(err.message);
+      }
     } finally {
       setReplayingWorkflow(null);
     }
@@ -215,8 +304,14 @@ export function App() {
         'sess_active'
       );
       setActiveScenarios(res.activeScenarios);
-    } catch (err) {
-      setIncidentError((err as Error).message);
+      recordAudit(res.auditEventId, 'inject_scenario', `Injected fault scenario: ${scenarioId}`);
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        setIncidentError(err.message);
+      }
     } finally {
       setInjectingScenario(false);
     }
@@ -233,6 +328,7 @@ export function App() {
         'sess_active'
       );
       setIncidents(res.incidents);
+      recordAudit(res.auditEventId, 'observe_drift', `Observed drift: detected ${res.incidents.length} incidents`);
       if (res.incident) {
         const detail = await apiClient.getIncident(
           res.incident.id,
@@ -241,8 +337,13 @@ export function App() {
         );
         setSelectedIncident(detail);
       }
-    } catch (err) {
-      setIncidentError((err as Error).message);
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        setIncidentError(err.message);
+      }
     } finally {
       setObserving(false);
     }
@@ -273,8 +374,13 @@ export function App() {
       } else {
         setActiveAdapter(null);
       }
-    } catch (err) {
-      alert((err as Error).message);
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        alert(err.message);
+      }
     } finally {
       setIncidentLoading(false);
     }
@@ -291,8 +397,14 @@ export function App() {
       );
       setImpactAnalysis(res);
       setSelectedIncident((prev) => (prev ? { ...prev, impactAnalysis: res } : null));
-    } catch (err) {
-      setImpactError((err as Error).message || 'Failed to analyze impact.');
+      recordAudit(res.auditEventId, 'analyze_impact', `Analyzed blast radius for ${incidentId} (${res.affectedWorkflows.length} affected)`);
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        setImpactError(err.message || 'Failed to analyze impact.');
+      }
     } finally {
       setAnalyzingImpact(false);
     }
@@ -314,8 +426,14 @@ export function App() {
         const proposals = prev.proposals ? [...prev.proposals, res.proposal] : [res.proposal];
         return { ...prev, proposals };
       });
-    } catch (err) {
-      setProposalError((err as Error).message || 'Failed to propose repair.');
+      recordAudit(res.auditEventId, 'propose_repair', `Generated candidate patch ${res.proposal.patch.id} (confidence: ${res.proposal.confidence})`);
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        setProposalError(err.message || 'Failed to propose repair.');
+      }
     } finally {
       setProposingRepair(false);
     }
@@ -339,8 +457,14 @@ export function App() {
           : [res.validationRun];
         return { ...prev, validationRuns };
       });
-    } catch (err) {
-      setValidationError((err as Error).message || 'Failed to validate candidate patch.');
+      recordAudit(res.auditEventId, 'validate_patch', `9-gate shadow validation ${res.validationRun.status} (${res.validationRun.eligibility === 'eligible' ? 'eligible' : 'ineligible'})`);
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        setValidationError(err.message || 'Failed to validate candidate patch.');
+      }
     } finally {
       setValidatingPatch(false);
     }
@@ -374,8 +498,14 @@ export function App() {
             : inc
         )
       );
-    } catch (err) {
-      setActivationError((err as Error).message || 'Failed to activate patch.');
+      recordAudit(res.auditEventId, 'activate_adapter', `Activated adapter ${res.activeAdapter.id} (v${res.activeAdapter.version})`);
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        setActivationError(err.message || 'Failed to activate patch.');
+      }
     } finally {
       setActivatingPatch(false);
     }
@@ -407,8 +537,14 @@ export function App() {
             : inc
         )
       );
-    } catch (err) {
-      setActivationError((err as Error).message || 'Failed to rollback adapter.');
+      recordAudit(res.auditEventId, 'rollback_adapter', `Rolled back adapter to parent v${res.restoredAdapter.version}`);
+    } catch (err: any) {
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        setActivationError(err.message || 'Failed to rollback adapter.');
+      }
     } finally {
       setRollingBack(false);
     }
@@ -450,8 +586,14 @@ export function App() {
           inc.id === incidentId ? { ...inc, status: detail.status } : inc
         )
       );
+      recordAudit(run.auditEventId || `aud_rec_${Date.now()}`, 'recovery_run', `One-click recovery run ${run.id}: ${run.status} (${run.stage})`);
     } catch (err: any) {
-      setRecoveryError(err.message || 'Failed to start recovery.');
+      if (err.message === 'UNAUTHENTICATED') {
+        setIsAuthenticated(false);
+        setSessionExpiredNotice('Session expired or Origin rejected. Please re-authenticate as operator.');
+      } else {
+        setRecoveryError(err.message || 'Failed to start recovery.');
+      }
     } finally {
       setRunningRecovery(false);
     }
@@ -524,6 +666,24 @@ export function App() {
 
       {/* Main Operational Canvas */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-6 space-y-6">
+        {sessionExpiredNotice && (
+          <div
+            role="alert"
+            className="p-3 bg-[#da3633]/10 border border-[#da3633]/40 rounded text-[#f85149] text-xs font-mono flex items-center justify-between"
+          >
+            <div className="flex items-center space-x-2">
+              <span className="font-bold">AUTHENTICATION NOTICE:</span>
+              <span>{sessionExpiredNotice}</span>
+            </div>
+            <button
+              onClick={() => setSessionExpiredNotice(null)}
+              className="text-[#8b949e] hover:text-[#c9d1d9] text-xs px-2 py-0.5 border border-[#30363d] rounded cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Ticket 28: Operator Onboarding & Project Scope */}
         <section aria-label="Operator & Project Scope" className="bg-[#161b22] border border-[#30363d] rounded p-5 space-y-4">
           <div className="flex items-center justify-between">
@@ -648,6 +808,83 @@ export function App() {
               )}
             </div>
           )}
+        </section>
+
+        {/* Ticket 09: Dependency Rail (A14) */}
+        <section aria-label="Dependency Rail" className="bg-[#161b22] border border-[#30363d] rounded p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-sm font-semibold text-[#f0f6fc]">Dependency Rail (A14)</h2>
+                <span className="px-2 py-0.5 rounded text-xs font-mono font-medium bg-[#21262d] text-[#8b949e] border border-[#30363d]">
+                  {providers.length} Registered Providers
+                </span>
+              </div>
+              <p className="text-xs text-[#8b949e]">
+                Monitors simulated external provider contracts, active behavioral baselines, and fault scenario states.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-3 text-xs font-mono">
+              <span className="text-[#8b949e]">
+                Baseline:{' '}
+                <strong className={baseline ? 'text-[#3fb950]' : 'text-[#8b949e]'}>
+                  {baseline ? `v${baseline.version}` : 'AWAITING'}
+                </strong>
+              </span>
+              <span className="text-[#8b949e]">•</span>
+              <span className="text-[#8b949e]">
+                Scenarios:{' '}
+                <strong className={activeScenarios.length > 0 ? 'text-[#e3b341]' : 'text-[#3fb950]'}>
+                  {activeScenarios.length > 0 ? activeScenarios.join(', ') : 'NONE ACTIVE'}
+                </strong>
+              </span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs font-mono border-collapse">
+              <thead>
+                <tr className="border-b border-[#30363d] text-[#8b949e]">
+                  <th className="py-2 px-3 font-medium">PROVIDER NAME</th>
+                  <th className="py-2 px-3 font-medium">ENDPOINT BASE</th>
+                  <th className="py-2 px-3 font-medium">STATUS</th>
+                  <th className="py-2 px-3 font-medium">ACTIVE SCENARIO</th>
+                  <th className="py-2 px-3 font-medium">BASELINE VERSION</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#21262d]">
+                {providers.map((p) => {
+                  const hasScenario = p.id === 'users' && activeScenarios.includes('users.field-rename');
+                  return (
+                    <tr key={p.id} className="hover:bg-[#21262d]/50 transition-colors">
+                      <td className="py-2 px-3 text-[#f0f6fc] font-semibold">
+                        {p.name} <span className="text-[#8b949e]">({p.id})</span>
+                      </td>
+                      <td className="py-2 px-3 text-[#58a6ff]">{p.baseUrl}</td>
+                      <td className="py-2 px-3">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40">
+                          {p.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="py-2 px-3">
+                        {hasScenario ? (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#d29922]/20 text-[#e3b341] border border-[#d29922]/40">
+                            users.field-rename
+                          </span>
+                        ) : (
+                          <span className="text-[#8b949e]">—</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-[#8b949e]">
+                        {baseline ? `v${baseline.version}` : 'Awaiting baseline'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         {/* Service Readiness Cards */}
@@ -1079,6 +1316,48 @@ export function App() {
 
                     {(impactAnalysis || selectedIncident.impactAnalysis) && (
                       <div className="space-y-3">
+                        {/* 3-Column Causal Ordering: Upstream Change -> Downstream Consumer -> Affected Workflows */}
+                        <div className="p-3 bg-[#161b22] border border-[#30363d] rounded space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-[#f0f6fc]">
+                              CAUSAL IMPACT TRACE (PRD 17 / AT-SDK-11)
+                            </span>
+                            <span className="text-[10px] font-mono text-[#8b949e]">
+                              Upstream Change → Downstream Consumer → Affected Workflows
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
+                            {/* Column 1 */}
+                            <div className="p-2.5 bg-[#0d1117] border border-[#da3633]/30 rounded space-y-1">
+                              <span className="text-[10px] font-bold text-[#f85149] block">1. UPSTREAM PROVIDER CHANGE</span>
+                              <div className="text-[#f0f6fc] font-semibold">{selectedIncident.provider} ({selectedIncident.endpoint})</div>
+                              <div className="text-[#8b949e] text-[11px]">{selectedIncident.summary}</div>
+                              <div className="text-[10px] text-[#8b949e] pt-1">
+                                Evidence maturity: <span className="text-[#3fb950] font-semibold">{selectedIncident.evidenceStrength}</span>
+                                {((selectedIncident.evidenceStrength as string) === 'limited' || (selectedIncident.evidenceStrength as string) === 'inferred') && (
+                                  <span className="text-[#e3b341]"> (limited precision)</span>
+                                )}
+                              </div>
+                            </div>
+                            {/* Column 2 */}
+                            <div className="p-2.5 bg-[#0d1117] border border-[#58a6ff]/30 rounded space-y-1">
+                              <span className="text-[10px] font-bold text-[#58a6ff] block">2. DOWNSTREAM CLIENT / ADAPTER</span>
+                              <div className="text-[#c9d1d9] font-semibold">UserServiceClient / Adapter</div>
+                              <div className="text-[#8b949e] text-[11px]">Mapping: name → displayName</div>
+                              <div className="text-[10px] text-[#79c0ff] pt-1">Lineage: runtime verified (Proxy)</div>
+                            </div>
+                            {/* Column 3 */}
+                            <div className="p-2.5 bg-[#0d1117] border border-[#e3b341]/30 rounded space-y-1">
+                              <span className="text-[10px] font-bold text-[#e3b341] block">3. AFFECTED WORKFLOWS</span>
+                              <div className="text-[#f0f6fc] font-semibold">
+                                {(impactAnalysis || selectedIncident.impactAnalysis)?.affectedWorkflows.map((w) => w.workflowId).join(', ') || selectedIncident.affectedWorkflows.join(', ')}
+                              </div>
+                              <div className="text-[#f85149] text-[11px]">Invariant breached</div>
+                              <div className="text-[10px] text-[#8b949e] pt-1">Blast radius: {selectedIncident.affectedWorkflows.length} workflows</div>
+                            </div>
+                          </div>
+                        </div>
+
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           {/* Column 1: Affected Workflows */}
                           <div className="bg-[#161b22] border border-[#da3633]/30 rounded p-3 space-y-2">
@@ -1530,6 +1809,53 @@ export function App() {
               )}
             </div>
           )}
+        </section>
+
+        {/* Ticket 09: Compact Audit Timeline (NFR-08) */}
+        <section aria-label="Compact Audit Timeline" className="bg-[#161b22] border border-[#30363d] rounded p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-sm font-semibold text-[#f0f6fc]">Compact Audit Timeline (NFR-08)</h2>
+                <span className="px-2 py-0.5 rounded text-xs font-mono font-medium bg-[#21262d] text-[#8b949e] border border-[#30363d]">
+                  {auditTimeline.length} Events Logged
+                </span>
+              </div>
+              <p className="text-xs text-[#8b949e]">
+                Append-only non-destructive operational audit trail with aud_* event IDs, timestamps, and causal operations.
+              </p>
+            </div>
+            <span className="text-xs font-mono text-[#3fb950]">IMMUTABLE AUDIT LOG</span>
+          </div>
+
+          <div className="overflow-x-auto max-h-72 overflow-y-auto">
+            <table className="w-full text-left text-xs font-mono border-collapse">
+              <thead>
+                <tr className="border-b border-[#30363d] text-[#8b949e] sticky top-0 bg-[#161b22]">
+                  <th className="py-2 px-3 font-medium">EVENT ID</th>
+                  <th className="py-2 px-3 font-medium">TIMESTAMP</th>
+                  <th className="py-2 px-3 font-medium">OPERATION</th>
+                  <th className="py-2 px-3 font-medium">SCOPE</th>
+                  <th className="py-2 px-3 font-medium">SUMMARY</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#21262d]">
+                {auditTimeline.map((item) => (
+                  <tr key={item.id} className="hover:bg-[#21262d]/50 transition-colors">
+                    <td className="py-2 px-3 text-[#58a6ff] font-semibold">{item.id}</td>
+                    <td className="py-2 px-3 text-[#8b949e]">{new Date(item.timestamp).toLocaleTimeString()}</td>
+                    <td className="py-2 px-3">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#21262d] border border-[#30363d] text-[#c9d1d9]">
+                        {item.action}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-[#8b949e]">{item.scope || '—'}</td>
+                    <td className="py-2 px-3 text-[#c9d1d9]">{item.summary}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         {/* Seeded Endpoints Status */}

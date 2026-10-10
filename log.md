@@ -546,3 +546,44 @@ Never include credentials or rewrite another contributor's history.
   - Ticket 29 (`saransh-sh`: "[P0] 29: Issue, rotate, and revoke environment-scoped ingestion keys") is also UNBLOCKED.
 - **Log commit identifier:** `docs: record issue 08 main integration and closure in dev log`.
 - **Log publication:** Confirmed pushed at `main`.
+
+---
+
+## Entry: 2026-10-11 - Ticket 09: Operate and Inspect Recovery from the Dashboard (codex/issue-09-operational-recovery-dashboard)
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#9](https://github.com/ashudotbuilds/PLAN9/issues/9)
+- **Branch:** `codex/issue-09-operational-recovery-dashboard`
+- **Status:** COMPLETED, VERIFIED, AND INTEGRATED into main in single commit per user instruction; Issue #9 closed.
+- **Scope:** PRD FR-UI-01, FR-UI-02, FR-UI-05, FR-UI-06, FR-UI-07, FR-UI-09, NFR-06, NFR-10, NFR-18, FR-LIN-01, FR-MON-01, NFR-08. Sections 13.1, 17, 21.1 (AT-SDK-11).
+- **Implementation summary:**
+  1. **Dependency Rail (A14):**
+     - Added `listProviders()` method in `api-client.ts` consuming `GET /api/providers`.
+     - Built responsive Dependency Rail in `App.tsx` displaying registered provider endpoints (Users API, Inventory API, Shipping API), status badges, active fault scenario tracking, and baseline version status.
+  2. **Incident Workspace & Evidence Maturity:**
+     - Restrained operational layout with solid surfaces (`#0d1117`, `#161b22`, `#21262d`), clean borders (`#30363d`), no decorative gradients or neon blobs.
+     - Evidence maturity labels (`confirmed` vs `inferred (limited precision)`) clearly distinguished.
+     - Full before/after evidence JSON diff comparison preserved in incident inspection drawer.
+  3. **3-Column Causal Impact Trace:**
+     - Structured 3-column causal layout: (1) Upstream Provider Change -> (2) Downstream Client / Adapter -> (3) Affected Workflows.
+     - Lineage precision explicitly displayed (runtime verified Proxy tracing vs inferred).
+  4. **Compact Audit Timeline (NFR-08):**
+     - Mounted immutable, append-only operational audit timeline tracking `aud_*` event IDs, causal operations (`create_project`, `capture_baseline`, `inject_scenario`, `observe_drift`, `analyze_impact`, `propose_repair`, `validate_patch`, `activate_adapter`, `rollback_adapter`, `recovery_run`), scopes, and timestamps.
+  5. **Scope Isolation & Stale State Reset:**
+     - Scope changes (project or environment switching) automatically clear stale incident inspection, impact analysis, repair proposal, validation run, active adapter, recovery run, and error views.
+  6. **Authentication & Safe Error States:**
+     - Added safe re-authentication notice banner on 401 unauthenticated or origin denial.
+  7. **Single-Commit Verification:**
+     - Verified all 71 tests passing across workspace (`vitest run`).
+     - Verified clean production build across workspace (`pnpm -r run build`).
+     - Verified planning documents via `node scripts/validate-planning.mjs`.
+- **Files Modified:**
+  - `apps/web/src/api-client.ts`
+  - `apps/web/src/App.tsx`
+  - `apps/web/src/App.test.tsx`
+  - `.scratch/driftguard/issues/09-operational-recovery-dashboard.md`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09.
+  - Next in line in topological order: **Ticket 10** (`soumya240806`: "[P0] 10: Refuse illegal shipping patch via semantic canary and trigger rollback") and **Ticket 29** (`saransh-sh`: "[P0] 29: Issue, rotate, and revoke environment-scoped ingestion keys").

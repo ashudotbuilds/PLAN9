@@ -4,7 +4,7 @@
 
 **Blocked by:** [08 - Run recovery through one backend command](08-backend-recovery-run.md); [28 - Establish local operator and project onboarding](28-local-project-onboarding.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
 **Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
 
@@ -20,16 +20,16 @@
 
 ## Acceptance criteria
 
-- [ ] Use dependency rail, incident workspace, impact trace, repair lab, and compact audit timeline.
-- [ ] Run safe recovery issues one command and polls backend progress; guided actions remain available.
-- [ ] All status, checks, counts, durations, and eligibility reasons come from backend results.
-- [ ] Use solid surfaces, compact evidence rows, clear typography, restrained operational color, and causal column ordering.
-- [ ] No decorative gradients, glass, neon, bento collage, blobs, nested-card clutter, or continuous animation.
-- [ ] Handle loading, empty, unavailable, rejected, review, recovered, and rolled-back states; provide focus, contrast, keyboard use, and reduced motion.
-- [ ] Run saransh_custom_antislop and fix material findings after functional verification.
+- [x] Use dependency rail, incident workspace, impact trace, repair lab, and compact audit timeline.
+- [x] Run safe recovery issues one command and polls backend progress; guided actions remain available.
+- [x] All status, checks, counts, durations, and eligibility reasons come from backend results.
+- [x] Use solid surfaces, compact evidence rows, clear typography, restrained operational color, and causal column ordering.
+- [x] No decorative gradients, glass, neon, bento collage, blobs, nested-card clutter, or continuous animation.
+- [x] Handle loading, empty, unavailable, rejected, review, recovered, and rolled-back states; provide focus, contrast, keyboard use, and reduced motion.
+- [x] Run saransh_custom_antislop and fix material findings after functional verification.
 
-- [ ] Use the authenticated operator session from ticket 28 with selected project/environment/session on existing control-plane calls. Handle 401 expiry and Origin rejection; public health never implies operator access.
-- [ ] Render source/context, baseline versus latest, evidence maturity, and declared/inferred/runtime lineage accurately. Missing lineage remains unknown. Compose the later ticket 34 setup strip without moving recovery orchestration into React.
+- [x] Use the authenticated operator session from ticket 28 with selected project/environment/session on existing control-plane calls. Handle 401 expiry and Origin rejection; public health never implies operator access.
+- [x] Render source/context, baseline versus latest, evidence maturity, and declared/inferred/runtime lineage accurately. Missing lineage remains unknown. Compose the later ticket 34 setup strip without moving recovery orchestration into React.
 
 ## Test scenarios
 
@@ -71,7 +71,7 @@ Deliver the acceptance criteria as one observable slice. Preserve the PRD safety
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.

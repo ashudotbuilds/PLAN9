@@ -39,7 +39,9 @@ import {
   StartRecoveryResponse,
   StartRecoveryResponseSchema,
   GetRecoveryRunResponseSchema,
-  RecoveryRun
+  RecoveryRun,
+  ProviderSummary,
+  ListProvidersResponseSchema
 } from '@driftguard/contracts';
 
 
@@ -174,6 +176,24 @@ export class ApiClient {
 
     const data = await res.json();
     return DemoStateResponseSchema.parse(data);
+  }
+
+  // Providers (A14)
+  async listProviders(): Promise<ProviderSummary[]> {
+    const res = await fetch(`${this.apiBase}/providers`, {
+      credentials: 'include'
+    });
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        throw new Error('UNAUTHENTICATED');
+      }
+      throw new Error(`Failed to list providers: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const parsed = ListProvidersResponseSchema.parse(data);
+    return parsed.providers;
   }
 
   // Baseline & Workflows (A03, A15)
