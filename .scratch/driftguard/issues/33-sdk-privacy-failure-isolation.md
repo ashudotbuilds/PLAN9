@@ -4,7 +4,7 @@
 
 **Blocked by:** Ticket 32.
 
-**Status:** ready-for-agent (authoring status; verify blockers before execution)
+**Status:** completed
 
 **Priority:** P0
 
@@ -18,10 +18,10 @@
 
 ## Acceptance criteria
 
-- [ ] Apply effective intersection of local opt-in and server policy; redact before serialization, cap JSON shape, remove forbidden URL/header/environment data, and attach server-assigned policy version.
-- [ ] Enforce every numeric queue/batch/event/depth/deadline/retry bound from PRD12.5; single-flight flush and unreferenced timer, stable IDs on retry, counted drops and bounded shutdown.
-- [ ] Retry only allowed transient outcomes with capped Retry-After; permanent auth disables sending, stale session drops old events and requires fresh registration.
-- [ ] Enable only approved three-identity response fixture evidence in the sample; detector evidence links preserve source/context and do not bypass controlled auto-eligibility proof.
+- [x] Apply effective intersection of local opt-in and server policy; redact before serialization, cap JSON shape, remove forbidden URL/header/environment data, and attach server-assigned policy version.
+- [x] Enforce every numeric queue/batch/event/depth/deadline/retry bound from PRD12.5; single-flight flush and unreferenced timer, stable IDs on retry, counted drops and bounded shutdown.
+- [x] Retry only allowed transient outcomes with capped Retry-After; permanent auth disables sending, stale session drops old events and requires fresh registration.
+- [x] Enable only approved three-identity response fixture evidence in the sample; detector evidence links preserve source/context and do not bypass controlled auto-eligibility proof.
 
 ## Test scenarios
 
@@ -48,8 +48,8 @@ One ticket per implementation run; no universal discovery/interception, producti
 
 ## Completion evidence
 
-- [ ] Retain observable backend/test results, scope, provenance, and requirement IDs.
-- [ ] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
-- [ ] Preserve other owners' changes and explicitly review staged paths.
-- [ ] After authorized feature push, append and separately push its log entry.
-- [ ] Mark complete only when acceptance criteria and verified blockers pass.
+- [x] Retain observable backend/test results, scope, provenance, and requirement IDs.
+- [x] Run relevant tests, typecheck, lint, and build; explain unavailable checks.
+- [x] Preserve other owners' changes and explicitly review staged paths.
+- [x] After authorized feature push, append and separately push its log entry.
+- [x] Mark complete only when acceptance criteria and verified blockers pass.

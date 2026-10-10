@@ -165,11 +165,30 @@ importers:
         specifier: ^3.0.5
         version: 3.2.7(@types/node@22.20.5)(jiti@1.21.7)(jsdom@26.1.0)(tsx@4.23.15)
 
+  packages/observer:
+    dependencies:
+      '@driftguard/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.1
+        version: 22.20.5
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.5
+        version: 3.2.7(@types/node@22.20.5)(jiti@1.21.7)(jsdom@26.1.0)(tsx@4.23.15)
+
   packages/sdk:
     dependencies:
       '@driftguard/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@driftguard/observer':
+        specifier: workspace:*
+        version: link:../observer
       zod:
         specifier: ^3.24.2
         version: 3.25.76

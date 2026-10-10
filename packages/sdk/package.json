@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@driftguard/contracts": "workspace:*",
+    "@driftguard/observer": "workspace:*",
     "zod": "^3.24.2"
   },
   "devDependencies": {

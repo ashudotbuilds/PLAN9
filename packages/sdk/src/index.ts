@@ -3,11 +3,16 @@ import {
   ProjectEnvironment,
   DependencyType,
   ObservationBatchV1,
+  CollectionPolicy,
   RegisterDependencyResponseSchema,
   IngestObservationsResponseSchema,
   SdkDiagnosticsResponseSchema
 } from '@driftguard/contracts';
-import { redactValue } from './redactor.js';
+import {
+  redactValue,
+  sanitizeRouteTemplate,
+  isApprovedFixtureKey
+} from '@driftguard/observer';
 
 export interface DriftGuardConfig {
   apiKey: string;
@@ -84,6 +89,15 @@ const SDK_VERSION = '0.1.0';
 const MAX_QUEUE_EVENTS = 100;
 const MAX_QUEUE_BYTES = 512 * 1024;
 const MAX_BATCH_EVENTS = 20;
+const MAX_BATCH_BYTES = 128 * 1024;
+const MAX_EVENT_BYTES = 16 * 1024;
+
+interface RegistrationRecord {
+  dependencyId: string;
+  sessionId: string;
+  collectionPolicy: CollectionPolicy;
+  collectionPolicyVersion: number;
+}
 
 type QueuedEvent = ObservationBatchV1['events'][number] & { _byteLength: number };
 
@@ -94,7 +108,7 @@ export class DriftGuard {
   private isShutdown = false;
   private lastError?: { code: string; message: string };
 
-  private registrations = new Map<string, { dependencyId: string; sessionId: string; collectionPolicyVersion: number }>();
+  private registrations = new Map<string, RegistrationRecord>();
   private activeSessionId?: string;
   private collectionPolicyVersion = 1;
 
@@ -222,6 +236,7 @@ export class DriftGuard {
       this.registrations.set(dependencyId, {
         dependencyId,
         sessionId,
+        collectionPolicy,
         collectionPolicyVersion: policyVersionNum
       });
 
@@ -246,7 +261,9 @@ export class DriftGuard {
     if (this.isShutdown) {
       return { queued: false, code: 'SDK_SHUTDOWN', message: 'SDK has been shut down.' };
     }
-    if (!this.registrations.has(input.dependencyId)) {
+
+    const reg = this.registrations.get(input.dependencyId);
+    if (!reg) {
       return {
         queued: false,
         code: 'UNREGISTERED_DEPENDENCY',
@@ -260,18 +277,18 @@ export class DriftGuard {
       return { queued: false, code: 'INVALID_METHOD', message: `Invalid HTTP method: ${input.method}` };
     }
 
-    let sanitizedRoute = input.routeTemplate;
-    const queryIdx = sanitizedRoute.indexOf('?');
-    if (queryIdx !== -1) {
-      sanitizedRoute = sanitizedRoute.slice(0, queryIdx);
-    }
-    if (sanitizedRoute.length > 256) {
-      sanitizedRoute = sanitizedRoute.slice(0, 256);
-    }
+    const sanitizedRoute = sanitizeRouteTemplate(input.routeTemplate);
 
+    // Effective policy intersection: local opt-in && server reviewed_fixtures && approved fixture key
     let responseEvidence: Record<string, unknown> | undefined = undefined;
+    const isLocalOptIn = this.config.collection?.responseEvidence === 'allowlisted_fixture';
+    const isServerReviewed = reg.collectionPolicy?.mode === 'reviewed_fixtures';
+    const isApprovedFixture = isApprovedFixtureKey(input.fixtureKey, reg.collectionPolicy?.allowedFixtureKeys);
+
     if (
-      this.config.collection?.responseEvidence === 'allowlisted_fixture' &&
+      isLocalOptIn &&
+      isServerReviewed &&
+      isApprovedFixture &&
       input.responseEvidence &&
       typeof input.responseEvidence === 'object'
     ) {
@@ -287,7 +304,7 @@ export class DriftGuard {
       statusCode: Math.max(100, Math.min(599, Math.floor(input.statusCode))),
       durationMs: Math.max(0, Math.min(60000, input.durationMs)),
       observedAt: input.observedAt || new Date().toISOString(),
-      collectionPolicyVersion: this.collectionPolicyVersion,
+      collectionPolicyVersion: reg.collectionPolicyVersion,
       fixtureKey: input.fixtureKey,
       responseEvidence,
       _byteLength: 0
@@ -296,7 +313,13 @@ export class DriftGuard {
     const serialized = JSON.stringify(event);
     event._byteLength = Buffer.byteLength(serialized, 'utf8');
 
-    // Bounds check: 100 events max, 512 KiB max
+    // Individual event limit: 16 KiB
+    if (event._byteLength > MAX_EVENT_BYTES) {
+      this.droppedCount += 1;
+      return { queued: false, code: 'EVENT_TOO_LARGE', message: 'Event exceeds 16 KiB size limit.' };
+    }
+
+    // Queue bounds check: 100 events max, 512 KiB max
     if (
       this.queue.length >= MAX_QUEUE_EVENTS ||
       this.currentQueueBytes + event._byteLength > MAX_QUEUE_BYTES
@@ -349,10 +372,20 @@ export class DriftGuard {
         break;
       }
 
-      const batchItems = this.queue.splice(0, MAX_BATCH_EVENTS);
-      const batchBytes = batchItems.reduce((acc, item) => acc + item._byteLength, 0);
+      // Slice batch items constrained by both <= 20 events AND <= 128 KiB
+      const batchItems: QueuedEvent[] = [];
+      let batchBytes = 0;
+      while (this.queue.length > 0 && batchItems.length < MAX_BATCH_EVENTS) {
+        const nextItem = this.queue[0];
+        if (batchItems.length > 0 && batchBytes + nextItem._byteLength > MAX_BATCH_BYTES) {
+          break;
+        }
+        batchItems.push(this.queue.shift()!);
+        batchBytes += nextItem._byteLength;
+      }
       this.currentQueueBytes = Math.max(0, this.currentQueueBytes - batchBytes);
 
+      // Stable batch payload across retries
       const batchPayload: ObservationBatchV1 = {
         schemaVersion: '1',
         batchId: randomUUID(),
@@ -411,6 +444,9 @@ export class DriftGuard {
             const code = errData?.error?.code || 'CONFLICT';
             finalCode = code;
             this.lastError = { code, message: errData?.error?.message || 'Ingestion conflict' };
+            if (code === 'STALE_SESSION') {
+              this.activeSessionId = undefined;
+            }
             break;
           }
 
@@ -419,8 +455,13 @@ export class DriftGuard {
             const retryAfterHeader = res.headers.get('retry-after');
             const retryAfterSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
             const backoffMs = !isNaN(retryAfterSec)
-              ? Math.min(retryAfterSec * 1000, 1000)
+              ? retryAfterSec * 1000
               : attempts === 1 ? 250 : 500;
+
+            if (Date.now() + backoffMs > flushDeadline) {
+              finalCode = 'RETRY_AFTER_EXCEEDED';
+              break;
+            }
 
             await new Promise(r => setTimeout(r, backoffMs));
             continue;

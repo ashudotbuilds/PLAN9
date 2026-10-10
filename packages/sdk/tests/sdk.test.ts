@@ -198,6 +198,7 @@ describe('@driftguard/sdk - Unit & Contract Tests', () => {
       routeTemplate: '/users/:id',
       statusCode: 200,
       durationMs: 38,
+      fixtureKey: 'user:u-123',
       responseEvidence: {
         id: 'u-123',
         name: 'Aarav',
@@ -226,6 +227,7 @@ describe('@driftguard/sdk - Unit & Contract Tests', () => {
     (sdk as any).registrations.set('dep-01', {
       dependencyId: 'dep-01',
       sessionId: 'sess-01',
+      collectionPolicy: { version: '1', mode: 'metadata_only', rateLimitPerMinute: 60 },
       collectionPolicyVersion: 1
     });
 
@@ -280,6 +282,7 @@ describe('@driftguard/sdk - Unit & Contract Tests', () => {
     (sdk as any).registrations.set('dep-01', {
       dependencyId: 'dep-01',
       sessionId: 'sess-01',
+      collectionPolicy: { version: '1', mode: 'metadata_only', rateLimitPerMinute: 60 },
       collectionPolicyVersion: 1
     });
 
@@ -314,6 +317,7 @@ describe('@driftguard/sdk - Unit & Contract Tests', () => {
     (sdk as any).registrations.set('dep-01', {
       dependencyId: 'dep-01',
       sessionId: 'sess-01',
+      collectionPolicy: { version: '1', mode: 'metadata_only', rateLimitPerMinute: 60 },
       collectionPolicyVersion: 1
     });
 
@@ -360,5 +364,115 @@ describe('@driftguard/sdk - Unit & Contract Tests', () => {
     });
     expect(trackRes.queued).toBe(false);
     expect(trackRes.code).toBe('SDK_SHUTDOWN');
+  });
+
+  it('rejects oversized individual events exceeding 16 KiB with EVENT_TOO_LARGE', async () => {
+    const sdk = new DriftGuard({ ...validConfig, collection: { responseEvidence: 'allowlisted_fixture' } });
+    (sdk as any).registrations.set('dep-01', {
+      dependencyId: 'dep-01',
+      sessionId: 'sess-01',
+      collectionPolicy: { version: '1', mode: 'reviewed_fixtures', rateLimitPerMinute: 60 },
+      collectionPolicyVersion: 1
+    });
+
+    const hugeBody: Record<string, string> = {};
+    for (let i = 0; i < 30; i++) {
+      hugeBody[`key_${i}`] = 'x'.repeat(900);
+    }
+
+    const res = sdk.trackRequest({
+      dependencyId: 'dep-01',
+      method: 'POST',
+      routeTemplate: '/data',
+      statusCode: 200,
+      durationMs: 20,
+      fixtureKey: 'user:u-123',
+      responseEvidence: hugeBody
+    });
+
+    expect(res.queued).toBe(false);
+    expect(res.code).toBe('EVENT_TOO_LARGE');
+
+    const diag = await sdk.diagnostics();
+    expect(diag.droppedCount).toBe(1);
+    await sdk.shutdown();
+  });
+
+  it('omits response evidence when fixtureKey is unapproved or server policy is metadata_only', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 200,
+      json: async () => ({
+        batchId: '123e4567-e89b-12d3-a456-426614174000',
+        accepted: 1,
+        duplicates: 0,
+        findings: [],
+        auditEventId: 'aud-01'
+      })
+    });
+
+    const sdk = new DriftGuard({
+      ...validConfig,
+      collection: { responseEvidence: 'allowlisted_fixture' },
+      fetchFn: mockFetch
+    });
+
+    // Registration with server policy mode metadata_only
+    (sdk as any).registrations.set('dep-meta-only', {
+      dependencyId: 'dep-meta-only',
+      sessionId: 'sess-01',
+      collectionPolicy: { version: '1', mode: 'metadata_only', rateLimitPerMinute: 60 },
+      collectionPolicyVersion: 1
+    });
+
+    sdk.trackRequest({
+      dependencyId: 'dep-meta-only',
+      method: 'GET',
+      routeTemplate: '/items',
+      statusCode: 200,
+      durationMs: 15,
+      fixtureKey: 'user:u-123', // approved key, but server policy is metadata_only
+      responseEvidence: { id: 'u-123', name: 'Aarav' }
+    });
+
+    await sdk.flush();
+    const ingestCall = mockFetch.mock.calls[0];
+    const payload = JSON.parse(ingestCall[1].body);
+    expect(payload.events[0].responseEvidence).toBeUndefined();
+
+    await sdk.shutdown();
+  });
+
+  it('handles 409 STALE_SESSION by invalidating active session and dropping batch', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 409,
+      json: async () => ({
+        error: { code: 'STALE_SESSION', message: 'Current session has been archived or reset.' }
+      })
+    });
+
+    const sdk = new DriftGuard({ ...validConfig, fetchFn: mockFetch });
+    (sdk as any).registrations.set('dep-01', {
+      dependencyId: 'dep-01',
+      sessionId: 'sess-old-01',
+      collectionPolicy: { version: '1', mode: 'metadata_only', rateLimitPerMinute: 60 },
+      collectionPolicyVersion: 1
+    });
+    (sdk as any).activeSessionId = 'sess-old-01';
+
+    sdk.trackRequest({
+      dependencyId: 'dep-01',
+      method: 'GET',
+      routeTemplate: '/test',
+      statusCode: 200,
+      durationMs: 10
+    });
+
+    const flushRes = await sdk.flush();
+    expect(flushRes.code).toBe('STALE_SESSION');
+    expect(flushRes.dropped).toBe(1);
+
+    const diag = await sdk.diagnostics();
+    expect(diag.activeSessionId).toBeUndefined();
+    await sdk.shutdown();
   });
 });
