@@ -205,7 +205,24 @@ Never include credentials or rewrite another contributor's history.
   - `node scripts/validate-planning.mjs`: All 41 tickets, 97 requirements, 37 API routes, and 17 SDK gates validated successfully.
 - **Branch:** `codex/issue-02-healthy-baseline-and-lineage`.
 - **Feature commit:** `82a0b664cdc010168e55f776702d282e96e82095`.
-- **Confirmed push:** Confirmed push to `origin/codex/issue-02-healthy-baseline-and-lineage`.
 - **Log commit identifier:** `docs: record issue 02 completion in dev log`.
+- **Log publication:** Confirmed pushed at `528cf3d`.
+
+## 2026-10-11 — Main integration: Issue #2 closure and frontier advancement
+
+- **Task:** User authorized fast-forward integration of completed Issue #2 into `main`, closure of GitHub Issue #2, and team frontier update.
+- **Authenticated identity:** ashudotbuilds via GitHub API and Git credentials.
+- **Status:** PUSHED to origin/main; Issue #2 closed on GitHub.
+- **Scope:** Default-branch publication of Ticket 02 implementation and dev log.
+- **Integration:** Fast-forward merged `codex/issue-02-healthy-baseline-and-lineage` (commits `82a0b66` and `528cf3d`) into `main`. Pushed to `origin/main`. Closed GitHub Issue #2 (state: `closed`, reason: `completed`).
+- **Team Frontier Status:**
+  - Ticket 01 is COMPLETED and closed.
+  - Ticket 28 is COMPLETED and closed.
+  - Ticket 02 is COMPLETED and closed.
+  - Ticket 03 (`ashudotbuilds`: "Inject and detect a user field rename") is now UNBLOCKED and ready to start!
+  - Ticket 29 (`saransh-sh`: "Issue rotate and revoke environment-scoped ingestion keys") is also UNBLOCKED.
+- **Log commit identifier:** `docs: record issue 02 main integration and closure in dev log`.
+- **Log publication:** Confirmed pushed at `main`.
+
 
 
