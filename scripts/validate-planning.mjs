@@ -56,7 +56,9 @@ const tickets = readdirSync(resolve(root, directory)).filter(path => /^\d{2}-.+\
   assert(/- \[ \]/.test(body), `${path}: no unchecked acceptance`);
   assert(field('GitHub issue').includes(`https://github.com/ashudotbuilds/PLAN9/issues/${Number(id)})`), `${path}: issue link`);
   assert(index.includes(`issues/${path}`), `${path}: absent from index`);
-  return { id, path, body, owner: field('Owner').replaceAll('`', ''), priority: field('Priority'),
+  const priority = field('Priority').match(/^(P[012])(?:\s|$)/)?.[1];
+  assert(priority, `${path}: invalid priority`);
+  return { id, path, body, owner: field('Owner').replaceAll('`', ''), priority,
     blockers: unique(matches(field('Blocked by'), /(?:Ticket )?(\d{2})/g)),
     requirements: unique(matches(field('PRD traceability'), /((?:FR-[A-Z]+|NFR)-\d+)/g)) };
 });
