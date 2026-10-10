@@ -274,6 +274,34 @@ export const BaselineSummarySchema = z.object({
 });
 export type BaselineSummary = z.infer<typeof BaselineSummarySchema>;
 
+export const FindingTypeSchema = z.enum([
+  'field_removed',
+  'field_added',
+  'field_type_changed',
+  'semantic_behavior_drift'
+]);
+export type FindingType = z.infer<typeof FindingTypeSchema>;
+
+export const EvidenceStrengthSchema = z.enum(['limited', 'moderate', 'strong', 'confirmed']);
+export type EvidenceStrength = z.infer<typeof EvidenceStrengthSchema>;
+
+export const IncidentSummarySchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  environment: ProjectEnvironmentSchema,
+  sessionId: z.string(),
+  provider: z.string(),
+  endpoint: z.string(),
+  fingerprint: z.string(),
+  status: IncidentStatusSchema,
+  severity: z.enum(['low', 'medium', 'high', 'critical']),
+  summary: z.string(),
+  detectedAt: z.string().datetime(),
+  evidenceStrength: EvidenceStrengthSchema,
+  affectedWorkflows: z.array(WorkflowIdSchema)
+});
+export type IncidentSummary = z.infer<typeof IncidentSummarySchema>;
+
 // A02: Demo State
 export const DemoStateResponseSchema = z.object({
   projectId: z.string(),
@@ -288,7 +316,9 @@ export const DemoStateResponseSchema = z.object({
     })
   ),
   baseline: BaselineSummarySchema.optional(),
-  readEdges: z.array(DependencyEdgeSchema).optional()
+  readEdges: z.array(DependencyEdgeSchema).optional(),
+  incidents: z.array(IncidentSummarySchema).optional(),
+  activeScenarios: z.array(z.string()).optional()
 });
 export type DemoStateResponse = z.infer<typeof DemoStateResponseSchema>;
 
@@ -343,4 +373,87 @@ export const ReplayWorkflowResponseSchema = z.object({
   auditEventId: z.string()
 });
 export type ReplayWorkflowResponse = z.infer<typeof ReplayWorkflowResponseSchema>;
+
+// Ticket 03: Scenario Injection, Findings, Observations & Incidents (A05, A06, A07, A08)
+export const InjectScenarioRequestSchema = z.object({
+  projectId: z.string().min(1),
+  environment: ProjectEnvironmentSchema,
+  sessionId: z.string().min(1)
+});
+export type InjectScenarioRequest = z.infer<typeof InjectScenarioRequestSchema>;
+
+export const InjectScenarioResponseSchema = z.object({
+  scenarioId: z.string(),
+  activeScenarios: z.array(z.string()),
+  auditEventId: z.string()
+});
+export type InjectScenarioResponse = z.infer<typeof InjectScenarioResponseSchema>;
+
+export const FindingSchema = z.object({
+  id: z.string(),
+  type: FindingTypeSchema,
+  provider: z.string(),
+  endpoint: z.string(),
+  fieldName: z.string(),
+  path: z.string(),
+  evidenceStrength: EvidenceStrengthSchema,
+  beforeValue: z.unknown().optional(),
+  afterValue: z.unknown().optional(),
+  description: z.string()
+});
+export type Finding = z.infer<typeof FindingSchema>;
+
+export const ListIncidentsResponseSchema = z.object({
+  incidents: z.array(IncidentSummarySchema)
+});
+export type ListIncidentsResponse = z.infer<typeof ListIncidentsResponseSchema>;
+
+export const IncidentDetailSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  environment: ProjectEnvironmentSchema,
+  sessionId: z.string(),
+  provider: z.string(),
+  endpoint: z.string(),
+  fingerprint: z.string(),
+  status: IncidentStatusSchema,
+  severity: z.enum(['low', 'medium', 'high', 'critical']),
+  summary: z.string(),
+  detectedAt: z.string().datetime(),
+  evidenceStrength: EvidenceStrengthSchema,
+  affectedWorkflows: z.array(WorkflowIdSchema),
+  findings: z.array(FindingSchema),
+  beforeEvidence: z.record(z.string(), z.unknown()),
+  afterEvidence: z.record(z.string(), z.unknown()),
+  failedWorkflows: z.array(
+    z.object({
+      workflowId: WorkflowIdSchema,
+      reason: z.string()
+    })
+  ),
+  auditEventId: z.string()
+});
+export type IncidentDetail = z.infer<typeof IncidentDetailSchema>;
+
+export const IncidentDetailResponseSchema = z.object({
+  incident: IncidentDetailSchema
+});
+export type IncidentDetailResponse = z.infer<typeof IncidentDetailResponseSchema>;
+
+export const RunObservationsRequestSchema = z.object({
+  projectId: z.string().min(1),
+  environment: ProjectEnvironmentSchema,
+  sessionId: z.string().min(1)
+});
+export type RunObservationsRequest = z.infer<typeof RunObservationsRequestSchema>;
+
+export const RunObservationsResponseSchema = z.object({
+  observationIds: z.array(z.string()),
+  findings: z.array(FindingSchema),
+  incident: IncidentSummarySchema.nullable(),
+  incidents: z.array(IncidentSummarySchema),
+  auditEventId: z.string()
+});
+export type RunObservationsResponse = z.infer<typeof RunObservationsResponseSchema>;
+
 

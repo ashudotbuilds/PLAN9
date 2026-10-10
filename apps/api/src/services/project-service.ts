@@ -5,8 +5,10 @@ import {
   CreateProjectResponse,
   ProjectDetailResponse,
   BaselineSummary,
-  DependencyEdge
+  DependencyEdge,
+  IncidentSummary
 } from '@driftguard/contracts';
+
 
 
 export interface ProjectRecord {
@@ -160,7 +162,9 @@ export class ProjectService {
     projectId?: string,
     environment: ProjectEnvironment = 'development',
     baseline?: BaselineSummary | null,
-    readEdges?: DependencyEdge[]
+    readEdges?: DependencyEdge[],
+    incidents?: IncidentSummary[],
+    activeScenarios?: string[]
   ) {
     let targetProject = projectId ? this.projects.get(projectId) : undefined;
     if (!targetProject) {
@@ -170,19 +174,33 @@ export class ProjectService {
 
     const envState = targetProject.environmentState[environment] || targetProject.environmentState.development;
 
+    let status = 'awaiting_baseline';
+    if (incidents && incidents.length > 0) {
+      status = 'incident_detected';
+    } else if (baseline) {
+      status = 'baseline_captured';
+    }
+
     return {
       projectId: targetProject.id,
       environment,
       sessionId: envState.activeSessionId,
-      status: baseline ? 'baseline_captured' : 'awaiting_baseline',
+      status,
       providers: [
-        { id: 'users', name: 'Users API', status: 'ready' },
+        {
+          id: 'users',
+          name: 'Users API',
+          status: activeScenarios?.includes('users.field-rename') ? 'drift_detected' : 'ready'
+        },
         { id: 'inventory', name: 'Inventory API', status: 'ready' },
         { id: 'shipping', name: 'Shipping API', status: 'ready' }
       ],
       baseline: baseline || undefined,
-      readEdges: readEdges || undefined
+      readEdges: readEdges || undefined,
+      incidents: incidents || undefined,
+      activeScenarios: activeScenarios || undefined
     };
   }
 }
+
 

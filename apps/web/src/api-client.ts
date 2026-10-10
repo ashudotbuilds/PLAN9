@@ -17,8 +17,17 @@ import {
   CaptureBaselineResponse,
   CaptureBaselineResponseSchema,
   ReplayWorkflowResponse,
-  ReplayWorkflowResponseSchema
+  ReplayWorkflowResponseSchema,
+  InjectScenarioResponse,
+  InjectScenarioResponseSchema,
+  RunObservationsResponse,
+  RunObservationsResponseSchema,
+  IncidentSummary,
+  ListIncidentsResponseSchema,
+  IncidentDetail,
+  IncidentDetailResponseSchema
 } from '@driftguard/contracts';
+
 
 
 export interface SystemReadiness {
@@ -201,7 +210,93 @@ export class ApiClient {
     const data = await res.json();
     return ReplayWorkflowResponseSchema.parse(data);
   }
+
+  // Scenarios & Incidents (A05, A06, A07, A08)
+  async injectScenario(
+    scenarioId: string,
+    projectId: string,
+    environment: ProjectEnvironment,
+    sessionId: string
+  ): Promise<InjectScenarioResponse> {
+    const res = await fetch(`${this.apiBase}/scenarios/${scenarioId}/inject`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ projectId, environment, sessionId })
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error?.message || `Failed to inject scenario: ${res.status}`);
+    }
+
+    const data = await res.json();
+    return InjectScenarioResponseSchema.parse(data);
+  }
+
+  async runObservations(
+    projectId: string,
+    environment: ProjectEnvironment,
+    sessionId: string
+  ): Promise<RunObservationsResponse> {
+    const res = await fetch(`${this.apiBase}/observations/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ projectId, environment, sessionId })
+    });
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error?.message || `Failed to run observations: ${res.status}`);
+    }
+
+    const data = await res.json();
+    return RunObservationsResponseSchema.parse(data);
+  }
+
+  async listIncidents(
+    projectId: string,
+    environment: ProjectEnvironment
+  ): Promise<IncidentSummary[]> {
+    const query = new URLSearchParams({ projectId, environment });
+    const res = await fetch(`${this.apiBase}/incidents?${query.toString()}`, {
+      credentials: 'include'
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to list incidents: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const parsed = ListIncidentsResponseSchema.parse(data);
+    return parsed.incidents;
+  }
+
+  async getIncident(
+    incidentId: string,
+    projectId: string,
+    environment: ProjectEnvironment
+  ): Promise<IncidentDetail> {
+    const query = new URLSearchParams({ projectId, environment });
+    const res = await fetch(`${this.apiBase}/incidents/${incidentId}?${query.toString()}`, {
+      credentials: 'include'
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to get incident: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const parsed = IncidentDetailResponseSchema.parse(data);
+    return parsed.incident;
+  }
 }
+
 
 
 export const apiClient = new ApiClient();

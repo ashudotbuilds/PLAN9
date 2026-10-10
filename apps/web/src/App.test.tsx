@@ -157,5 +157,114 @@ describe('Web App - Operational Canvas & Operator Onboarding', () => {
     expect(screen.getByText('Welcome Email')).toBeInTheDocument();
     expect(screen.getByText('user.displayName')).toBeInTheDocument();
   });
+
+  it('allows injecting scenario and observing detected incident', async () => {
+    vi.spyOn(apiClient, 'checkSystemReadiness').mockResolvedValue({
+      api: { status: 'ready' },
+      mockProviders: { status: 'ready' }
+    });
+    vi.spyOn(apiClient, 'listProjects').mockResolvedValue([
+      {
+        id: 'prj_test_1',
+        name: 'Test Project',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        environments: ['development', 'production']
+      }
+    ]);
+    vi.spyOn(apiClient, 'getDemoState').mockResolvedValue({
+      projectId: 'prj_test_1',
+      environment: 'development',
+      sessionId: 'sess_1',
+      status: 'baseline_captured',
+      providers: [],
+      baseline: {
+        id: 'base_1',
+        projectId: 'prj_test_1',
+        environment: 'development',
+        sessionId: 'sess_1',
+        version: 1,
+        fingerprint: 'abc1234567890def',
+        capturedAt: '2026-10-11T01:00:00.000Z',
+        status: 'captured',
+        fixtures: { usersCount: 3, inventoryItemsCount: 3, shippingCalculated: true }
+      }
+    });
+    vi.spyOn(apiClient, 'injectScenario').mockResolvedValue({
+      scenarioId: 'users.field-rename',
+      activeScenarios: ['users.field-rename'],
+      auditEventId: 'aud_scen_1'
+    });
+    vi.spyOn(apiClient, 'runObservations').mockResolvedValue({
+      observationIds: ['obs_1'],
+      findings: [
+        {
+          id: 'find_1',
+          type: 'field_removed',
+          provider: 'users',
+          endpoint: '/users/:id',
+          fieldName: 'name',
+          path: '$.name',
+          evidenceStrength: 'confirmed',
+          description: "Field 'name' was removed"
+        }
+      ],
+      incident: {
+        id: 'inc_123',
+        projectId: 'prj_test_1',
+        environment: 'development',
+        sessionId: 'sess_1',
+        provider: 'users',
+        endpoint: '/users/:id',
+        fingerprint: 'fingerprint_123',
+        status: 'detected',
+        severity: 'high',
+        summary: "Breaking schema change: provider field 'name' renamed to 'display_name'",
+        detectedAt: '2026-10-11T01:30:00.000Z',
+        evidenceStrength: 'confirmed',
+        affectedWorkflows: ['welcome_email', 'customer_profile']
+      },
+      incidents: [
+        {
+          id: 'inc_123',
+          projectId: 'prj_test_1',
+          environment: 'development',
+          sessionId: 'sess_1',
+          provider: 'users',
+          endpoint: '/users/:id',
+          fingerprint: 'fingerprint_123',
+          status: 'detected',
+          severity: 'high',
+          summary: "Breaking schema change: provider field 'name' renamed to 'display_name'",
+          detectedAt: '2026-10-11T01:30:00.000Z',
+          evidenceStrength: 'confirmed',
+          affectedWorkflows: ['welcome_email', 'customer_profile']
+        }
+      ],
+      auditEventId: 'aud_obs_1'
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('BASELINE CAPTURED v1')).toBeInTheDocument();
+    });
+
+    const injectBtn = screen.getByRole('button', { name: /inject user rename/i });
+    fireEvent.click(injectBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Injected: users\.field-rename/)).toBeInTheDocument();
+    });
+
+    const observeBtn = screen.getByRole('button', { name: /observe & detect drift/i });
+    fireEvent.click(observeBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('1 INCIDENT DETECTED')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/Breaking schema change: provider field 'name' renamed/)).toBeInTheDocument();
+  });
 });
+
 

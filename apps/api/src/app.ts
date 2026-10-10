@@ -10,17 +10,21 @@ import {
   ProjectEnvironmentSchema,
   CaptureBaselineRequestSchema,
   WorkflowIdSchema,
-  ReplayWorkflowRequestSchema
+  ReplayWorkflowRequestSchema,
+  InjectScenarioRequestSchema,
+  RunObservationsRequestSchema
 } from '@driftguard/contracts';
 import { randomUUID } from 'node:crypto';
 import { OperatorAuthService } from './services/operator-auth-service.js';
 import { ProjectService } from './services/project-service.js';
 import { BaselineService } from './services/baseline-service.js';
+import { IncidentService } from './services/incident-service.js';
 
 export interface ApiAppOptions {
   operatorToken?: string;
   mockProvidersBaseUrl?: string;
   baselineService?: BaselineService;
+  incidentService?: IncidentService;
 }
 
 export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
@@ -34,6 +38,10 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
   const baselineService =
     options.baselineService ||
     new BaselineService({ mockProvidersBaseUrl: options.mockProvidersBaseUrl });
+  const incidentService =
+    options.incidentService ||
+    new IncidentService(baselineService, { mockProvidersBaseUrl: options.mockProvidersBaseUrl });
+
 
 
   app.register(fastifyCookie);
@@ -255,7 +263,17 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     const environment = envParsed && envParsed.success ? envParsed.data : 'development';
 
     const baseline = baselineService.getBaseline(query.projectId || 'prj_demo_default', environment);
-    const state = projectService.getDemoState(query.projectId, environment, baseline?.summary, baseline?.readEdges);
+    const incidents = incidentService.listIncidents(query.projectId || 'prj_demo_default', environment);
+    const activeScenarios = incidentService.getActiveScenarios();
+
+    const state = projectService.getDemoState(
+      query.projectId,
+      environment,
+      baseline?.summary,
+      baseline?.readEdges,
+      incidents,
+      activeScenarios
+    );
     if (!state) {
       return reply.status(404).send({
         error: {
@@ -341,6 +359,83 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     return reply.status(200).send(result);
   });
 
+  // A05: Inject Scenario
+  app.post('/api/scenarios/:scenarioId/inject', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const { scenarioId } = request.params as { scenarioId: string };
+    const parsed = InjectScenarioRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Invalid scenario injection payload.',
+          details: parsed.error.format(),
+          correlationId
+        }
+      });
+    }
+
+    const { projectId, environment, sessionId } = parsed.data;
+    const result = await incidentService.injectScenario(scenarioId, projectId, environment, sessionId);
+    return reply.status(200).send(result);
+  });
+
+  // A06: Run Observations & Change Detection
+  app.post('/api/observations/run', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const parsed = RunObservationsRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Invalid run observations payload.',
+          details: parsed.error.format(),
+          correlationId
+        }
+      });
+    }
+
+    const { projectId, environment, sessionId } = parsed.data;
+    const result = await incidentService.runObservations(projectId, environment, sessionId);
+    return reply.status(200).send(result);
+  });
+
+  // A07: List Incidents
+  app.get('/api/incidents', { preHandler: [requireOperatorAuth] }, async (request) => {
+    const query = request.query as { projectId?: string; environment?: string };
+    const envParsed = query.environment ? ProjectEnvironmentSchema.safeParse(query.environment) : null;
+    const environment = envParsed && envParsed.success ? envParsed.data : 'development';
+    const projectId = query.projectId || 'prj_demo_default';
+
+    const incidents = incidentService.listIncidents(projectId, environment);
+    return { incidents };
+  });
+
+  // A08: Get Incident Detail
+  app.get('/api/incidents/:incidentId', { preHandler: [requireOperatorAuth] }, async (request, reply) => {
+    const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+    const { incidentId } = request.params as { incidentId: string };
+    const query = request.query as { projectId?: string; environment?: string };
+    const envParsed = query.environment ? ProjectEnvironmentSchema.safeParse(query.environment) : null;
+    const environment = envParsed && envParsed.success ? envParsed.data : 'development';
+    const projectId = query.projectId || 'prj_demo_default';
+
+    const incident = incidentService.getIncident(incidentId, projectId, environment);
+    if (!incident) {
+      return reply.status(404).send({
+        error: {
+          code: 'INCIDENT_NOT_FOUND',
+          message: `Incident '${incidentId}' not found in current scope.`,
+          details: { incidentId, projectId, environment },
+          correlationId
+        }
+      });
+    }
+
+    return { incident };
+  });
+
   return app;
 }
+
 

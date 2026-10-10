@@ -5,7 +5,9 @@ import {
   ProjectEnvironment,
   BaselineSummary,
   DependencyEdge,
-  ReplayWorkflowResponse
+  ReplayWorkflowResponse,
+  IncidentSummary,
+  IncidentDetail
 } from '@driftguard/contracts';
 
 export function App() {
@@ -36,6 +38,16 @@ export function App() {
   const [workflowResults, setWorkflowResults] = useState<Record<string, ReplayWorkflowResponse>>({});
   const [replayingWorkflow, setReplayingWorkflow] = useState<string | null>(null);
 
+  // Ticket 03: Scenario Injection & Incidents
+  const [activeScenarios, setActiveScenarios] = useState<string[]>([]);
+  const [injectingScenario, setInjectingScenario] = useState(false);
+  const [observing, setObserving] = useState(false);
+  const [incidents, setIncidents] = useState<IncidentSummary[]>([]);
+  const [selectedIncident, setSelectedIncident] = useState<IncidentDetail | null>(null);
+  const [incidentLoading, setIncidentLoading] = useState(false);
+  const [incidentError, setIncidentError] = useState<string | null>(null);
+
+
   const fetchStatus = async () => {
     setRefreshing(true);
     const data = await apiClient.checkSystemReadiness();
@@ -54,10 +66,17 @@ export function App() {
       if (state.readEdges) {
         setReadEdges(state.readEdges);
       }
+      if (state.incidents) {
+        setIncidents(state.incidents);
+      }
+      if (state.activeScenarios) {
+        setActiveScenarios(state.activeScenarios);
+      }
     } catch {
       // Ignore if unauthenticated
     }
   };
+
 
   const loadProjects = async () => {
     try {
@@ -150,6 +169,64 @@ export function App() {
       setReplayingWorkflow(null);
     }
   };
+
+  const handleInjectScenario = async (scenarioId: string) => {
+    if (!selectedProjectId) return;
+    setInjectingScenario(true);
+    setIncidentError(null);
+    try {
+      const res = await apiClient.injectScenario(
+        scenarioId,
+        selectedProjectId,
+        selectedEnvironment,
+        'sess_active'
+      );
+      setActiveScenarios(res.activeScenarios);
+    } catch (err) {
+      setIncidentError((err as Error).message);
+    } finally {
+      setInjectingScenario(false);
+    }
+  };
+
+  const handleRunObservations = async () => {
+    if (!selectedProjectId) return;
+    setObserving(true);
+    setIncidentError(null);
+    try {
+      const res = await apiClient.runObservations(
+        selectedProjectId,
+        selectedEnvironment,
+        'sess_active'
+      );
+      setIncidents(res.incidents);
+      if (res.incident) {
+        const detail = await apiClient.getIncident(
+          res.incident.id,
+          selectedProjectId,
+          selectedEnvironment
+        );
+        setSelectedIncident(detail);
+      }
+    } catch (err) {
+      setIncidentError((err as Error).message);
+    } finally {
+      setObserving(false);
+    }
+  };
+
+  const handleSelectIncident = async (id: string) => {
+    setIncidentLoading(true);
+    try {
+      const detail = await apiClient.getIncident(id, selectedProjectId, selectedEnvironment);
+      setSelectedIncident(detail);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setIncidentLoading(false);
+    }
+  };
+
 
 
   const getStatusBadge = (status: 'loading' | 'ready' | 'offline') => {
@@ -557,8 +634,133 @@ export function App() {
           </div>
         </section>
 
+        {/* Scenario Injection & Incident Detection Section (A05, A06, A07, A08) */}
+        <section aria-label="Incident Detection" className="bg-[#161b22] border border-[#30363d] rounded p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center space-x-2">
+                <h2 className="text-sm font-semibold text-[#f0f6fc]">Scenario Injection & Change Detection (A05/A06)</h2>
+                {incidents.length > 0 ? (
+                  <span className="px-2 py-0.5 rounded text-xs font-mono font-medium bg-[#da3633]/20 text-[#f85149] border border-[#da3633]/40">
+                    {incidents.length} INCIDENT DETECTED
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-xs font-mono font-medium bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40">
+                    NO ACTIVE INCIDENTS
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[#8b949e]">
+                Inject real dependency drift scenarios without server restart and observe field-level breaking changes.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => handleInjectScenario('users.field-rename')}
+                disabled={!baseline || injectingScenario}
+                className="px-3.5 py-1.5 bg-[#d29922]/20 hover:bg-[#d29922]/30 text-[#e3b341] border border-[#d29922]/40 disabled:opacity-50 rounded text-xs font-medium transition cursor-pointer"
+              >
+                {injectingScenario
+                  ? 'Injecting...'
+                  : activeScenarios.includes('users.field-rename')
+                  ? 'Injected: users.field-rename'
+                  : 'Inject User Rename'}
+              </button>
+
+              <button
+                onClick={handleRunObservations}
+                disabled={!baseline || observing}
+                className="px-4 py-1.5 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white rounded text-xs font-medium transition cursor-pointer shadow-sm"
+              >
+                {observing ? 'Observing...' : 'Observe & Detect Drift'}
+              </button>
+            </div>
+          </div>
+
+          {incidentError && (
+            <div className="p-3 bg-[#da3633]/10 border border-[#da3633]/30 rounded text-[#f85149] font-mono text-xs">
+              {incidentError}
+            </div>
+          )}
+
+          {incidents.length > 0 && (
+            <div className="space-y-3 pt-3 border-t border-[#30363d]">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold text-[#f0f6fc]">Detected Incidents (A07)</h3>
+                <span className="text-[11px] font-mono text-[#8b949e]">Deduplicated by Fingerprint</span>
+              </div>
+
+              <div className="space-y-2">
+                {incidents.map((inc) => (
+                  <div
+                    key={inc.id}
+                    onClick={() => handleSelectIncident(inc.id)}
+                    className="p-3 bg-[#0d1117] border border-[#da3633]/40 rounded hover:border-[#da3633] transition cursor-pointer space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#da3633]/20 text-[#f85149] border border-[#da3633]/40">
+                          {inc.severity.toUpperCase()}
+                        </span>
+                        <span className="text-xs font-semibold text-[#f0f6fc]">{inc.summary}</span>
+                      </div>
+                      <span className="text-xs font-mono text-[#8b949e]">{inc.id}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs font-mono text-[#8b949e]">
+                      <div>Endpoint: <span className="text-[#58a6ff]">{inc.endpoint}</span></div>
+                      <div>Strength: <span className="text-[#3fb950]">{inc.evidenceStrength}</span></div>
+                      <div>Status: <span className="text-[#f85149]">{inc.status}</span></div>
+                      <div>Affected Workflows: <span className="text-[#e3b341]">{inc.affectedWorkflows.join(', ')}</span></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {selectedIncident && (
+                <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded space-y-3 mt-3">
+                  <div className="flex items-center justify-between border-b border-[#21262d] pb-2">
+                    <h4 className="text-xs font-semibold text-[#f0f6fc]">
+                      Incident Evidence Inspection (A08) — {selectedIncident.id}
+                    </h4>
+                    <span className="text-[11px] font-mono text-[#79c0ff]">
+                      Fingerprint: {selectedIncident.fingerprint.slice(0, 16)}...
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
+                    <div className="bg-[#161b22] p-3 rounded border border-[#21262d] space-y-1">
+                      <span className="text-[#8b949e] font-semibold block">BEFORE (Baseline Evidence):</span>
+                      <pre className="text-[#3fb950] text-[11px] overflow-x-auto whitespace-pre-wrap">
+                        {JSON.stringify(selectedIncident.beforeEvidence, null, 2)}
+                      </pre>
+                    </div>
+                    <div className="bg-[#161b22] p-3 rounded border border-[#21262d] space-y-1">
+                      <span className="text-[#8b949e] font-semibold block">AFTER (Observed Drift):</span>
+                      <pre className="text-[#f85149] text-[11px] overflow-x-auto whitespace-pre-wrap">
+                        {JSON.stringify(selectedIncident.afterEvidence, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#da3633]/10 border border-[#da3633]/30 p-3 rounded text-xs font-mono space-y-1">
+                    <span className="text-[#f85149] font-bold block">Consumer Invariant Failures:</span>
+                    {selectedIncident.failedWorkflows.map((wf) => (
+                      <div key={wf.workflowId} className="text-[#f0f6fc] text-[11px]">
+                        • <span className="font-semibold text-[#e3b341]">{wf.workflowId}</span>: {wf.reason}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
         {/* Seeded Endpoints Status */}
         <section aria-label="Mock Dependency Endpoints" className="bg-[#161b22] border border-[#30363d] rounded p-5 space-y-4">
+
 
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-[#f0f6fc]">

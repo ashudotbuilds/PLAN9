@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { buildApiApp } from '../src/app.js';
 import {
   CORRELATION_ID_HEADER,
@@ -565,5 +566,161 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(res.json().error.code).toBe('WORKFLOW_NOT_FOUND');
     });
   });
+
+  describe('Ticket 03: A05 Scenario Injection, A06 Observation & A07/A08 Incident Management', () => {
+    it('requires operator authentication for inject, observe, and incident endpoints', async () => {
+      const injectRes = await app.inject({
+        method: 'POST',
+        url: '/api/scenarios/users.field-rename/inject',
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_1' }
+      });
+      expect(injectRes.statusCode).toBe(401);
+
+      const obsRes = await app.inject({
+        method: 'POST',
+        url: '/api/observations/run',
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_1' }
+      });
+      expect(obsRes.statusCode).toBe(401);
+
+      const listRes = await app.inject({
+        method: 'GET',
+        url: '/api/incidents'
+      });
+      expect(listRes.statusCode).toBe(401);
+    });
+
+    it('injects scenario users.field-rename via mock provider (A05)', async () => {
+      const mockFetch = vi.fn(async (url: string | URL | Request) => {
+        if (String(url).includes('/scenarios/users.field-rename/inject')) {
+          return { ok: true, json: async () => ({ ok: true, activeScenarios: ['users.field-rename'] }) };
+        }
+        return { ok: false, status: 404 };
+      });
+
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      const baselineService = new BaselineService();
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/scenarios/users.field-rename/inject',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_1' }
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.scenarioId).toBe('users.field-rename');
+      expect(body.activeScenarios).toContain('users.field-rename');
+      expect(body.auditEventId).toBeDefined();
+    });
+
+    it('observes drift, detects user rename incident, deduplicates and verifies evidence (A06, A07, A08)', async () => {
+      let isRenamed = false;
+      const mockFetch = vi.fn(async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.includes('/users/u-123')) {
+          return { ok: true, json: async () => isRenamed ? { id: 'u-123', display_name: 'Aarav' } : { id: 'u-123', name: 'Aarav' } };
+        }
+        if (u.includes('/users/u-456')) {
+          return { ok: true, json: async () => isRenamed ? { id: 'u-456', display_name: 'Meera' } : { id: 'u-456', name: 'Meera' } };
+        }
+        if (u.includes('/users/u-789')) {
+          return { ok: true, json: async () => isRenamed ? { id: 'u-789', display_name: 'Kabir' } : { id: 'u-789', name: 'Kabir' } };
+        }
+        if (u.includes('/inventory/items')) {
+          return { ok: true, json: async () => ({ items: [{ id: '1', sku: 'A', quantity: 10, in_stock: true }], total: 1 }) };
+        }
+        if (u.includes('/shipping/estimate')) {
+          return { ok: true, json: async () => ({ estimated_delivery_date: '2026-10-18' }) };
+        }
+        if (u.includes('/scenarios/users.field-rename/inject')) {
+          isRenamed = true;
+          return { ok: true, json: async () => ({ ok: true, activeScenarios: ['users.field-rename'] }) };
+        }
+        return { ok: false, status: 404 };
+      });
+
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      const baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      // 1. Capture healthy baseline
+      await testApp.inject({
+        method: 'POST',
+        url: '/api/baselines/capture',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_1' }
+      });
+
+      // 2. Inject scenario
+      await testApp.inject({
+        method: 'POST',
+        url: '/api/scenarios/users.field-rename/inject',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_1' }
+      });
+
+      // 3. Run observations
+      const obsRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/observations/run',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_1' }
+      });
+      expect(obsRes.statusCode).toBe(200);
+      const obsBody = obsRes.json();
+      expect(obsBody.findings.length).toBe(2);
+      expect(obsBody.findings.some((f: any) => f.type === 'field_removed' && f.fieldName === 'name')).toBe(true);
+      expect(obsBody.findings.some((f: any) => f.type === 'field_added' && f.fieldName === 'display_name')).toBe(true);
+      expect(obsBody.incident).toBeDefined();
+      expect(obsBody.incident.severity).toBe('high');
+      expect(obsBody.incident.evidenceStrength).toBe('confirmed');
+      expect(obsBody.incident.affectedWorkflows).toContain('welcome_email');
+      expect(obsBody.incident.affectedWorkflows).toContain('customer_profile');
+
+      const incidentId = obsBody.incident.id;
+
+      // 4. Repeated observation reuses active incident fingerprint (deduplication)
+      const repeatRes = await testApp.inject({
+        method: 'POST',
+        url: '/api/observations/run',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development', sessionId: 'sess_1' }
+      });
+      expect(repeatRes.statusCode).toBe(200);
+      const repeatBody = repeatRes.json();
+      expect(repeatBody.incidents.length).toBe(1);
+      expect(repeatBody.incident.id).toBe(incidentId);
+
+      // 5. List incidents (A07)
+      const listRes = await testApp.inject({
+        method: 'GET',
+        url: '/api/incidents?projectId=prj_demo_default&environment=development',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      expect(listRes.statusCode).toBe(200);
+      expect(listRes.json().incidents.length).toBe(1);
+
+      // 6. Get incident detail (A08)
+      const detailRes = await testApp.inject({
+        method: 'GET',
+        url: `/api/incidents/${incidentId}?projectId=prj_demo_default&environment=development`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken }
+      });
+      expect(detailRes.statusCode).toBe(200);
+      const detail = detailRes.json().incident;
+      expect(detail.id).toBe(incidentId);
+      expect(detail.beforeEvidence.users).toBeDefined();
+      expect(detail.afterEvidence.users).toBeDefined();
+      expect(detail.failedWorkflows.length).toBe(2);
+    });
+  });
 });
+
 

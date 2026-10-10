@@ -4,9 +4,9 @@
 
 **Blocked by:** [02 - Capture a healthy baseline and trace workflow reads](02-healthy-baseline-and-lineage.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
-**Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
+**Planning readiness:** Implemented and verified via automated API and UI tests.
 
 **Priority:** P0
 
@@ -20,16 +20,16 @@
 
 ## Acceptance criteria
 
-- [ ] Injection changes subsequent HTTP responses without restart or source edits.
-- [ ] Observe u-123/Aarav, u-456/Meera, and u-789/Kabir with display_name replacing name.
-- [ ] Classify removed/added fields with deterministic evidence and separate evidence strength from repair confidence.
-- [ ] Repeating equivalent observations reuses the active incident fingerprint.
-- [ ] Existing user workflows visibly fail through their required-field invariants.
-- [ ] Detector cannot import scenario controls or require a model.
+- [x] Injection changes subsequent HTTP responses without restart or source edits.
+- [x] Observe u-123/Aarav, u-456/Meera, and u-789/Kabir with display_name replacing name.
+- [x] Classify removed/added fields with deterministic evidence and separate evidence strength from repair confidence.
+- [x] Repeating equivalent observations reuses the active incident fingerprint.
+- [x] Existing user workflows visibly fail through their required-field invariants.
+- [x] Detector cannot import scenario controls or require a model.
 
-- [ ] Scope findings, deduplication, before/after references, and incident lookup by project/environment/session; guarded scenario and observe actions require the owning demo lease.
-- [ ] Persist detected/suspected/confirmed evidence maturity independently from incident lifecycle. Three controlled identity fixtures corroborate rename; one sample remains limited evidence.
-- [ ] Compare only compatible endpoint/policy/fixture context. Accept the observer seam used later by ticket 31; metadata-only inputs cannot invent removed/added fields, and historical late events cannot reopen active incidents.
+- [x] Scope findings, deduplication, before/after references, and incident lookup by project/environment/session; guarded scenario and observe actions require the owning demo lease.
+- [x] Persist detected/suspected/confirmed evidence maturity independently from incident lifecycle. Three controlled identity fixtures corroborate rename; one sample remains limited evidence.
+- [x] Compare only compatible endpoint/policy/fixture context. Accept the observer seam used later by ticket 31; metadata-only inputs cannot invent removed/added fields, and historical late events cannot reopen active incidents.
 
 ## Test scenarios
 
@@ -58,7 +58,7 @@ Deliver the acceptance criteria as one observable slice. Preserve the PRD safety
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.
