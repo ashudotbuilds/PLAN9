@@ -947,7 +947,46 @@ Never include credentials or rewrite another contributor's history.
   - `log.md`
 - **Team Frontier Status:**
   - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33, 12.
-  - Next in line in topological order: **Ticket 34** (`chandrabhan-kushwaha`: "[P0] 34: Surface SDK onboarding status and diagnostics in the operator dashboard").
+  - Next in line in topological order: **Ticket 34** (`AnushkaBhardwaj15`: "[P0] 34: Operate SDK setup keys inventory and diagnostics from the dashboard").
+
+---
+
+## Entry: 2026-10-11 - Ticket 34: Operate SDK setup keys inventory and diagnostics from the dashboard
+
+- **Date:** 2026-10-11
+- **Operator:** `codex` pair programming with `ashudotbuilds`
+- **Issue:** [#34](https://github.com/ashudotbuilds/PLAN9/issues/34)
+- **Code Commit:** `f092a56`
+- **Status:** COMPLETED, VERIFIED, AND INTEGRATED into main; Issue #34 closed.
+- **Scope:** PRD FR-UI-10, FR-INV-02, FR-LIN-01, FR-KEY-01, FR-KEY-02, NFR-10, NFR-18, NFR-21. Sections 17 and 21.1; AT-SDK-01/08/11; Endpoints A20, A21, A22, A23, A24, A25, A26, A30, A31, A02.
+- **Implementation summary:**
+  1. **SDK Integration & Telemetry Strip:**
+     - Rendered responsive operational telemetry strip displaying live ingestion status (`RECEIVING (LIVE INGESTION)`, `REGISTERED (NOT OBSERVED)`, `AWAITING OBSERVATIONS`).
+     - Displayed project scope, active session ID (`environmentState.activeSessionId`), last acknowledged ingestion timestamp, and metadata-only policy badge.
+     - Provided quick copyable connection command for `@driftguard/sample-consumer` with active project ID and environment variables.
+     - Labeled activity distinctly: `SEEDED BASELINE ACTIVITY` vs `LIVE SDK INGESTION`.
+     - Explicitly disclosed `Host Isolation Active` guarantee and `UNKNOWN COVERAGE` for untracked endpoints.
+  2. **Transient Key Display & Zero Frontend Persistence:**
+     - Plaintext API key displayed strictly once upon generation/rotation; never persisted to localStorage, sessionStorage, or client logs.
+     - Plaintext immediately cleared on manual dismissal and automatically purged on project/environment navigation.
+  3. **Inventory to Causal Incident & Impact Navigation:**
+     - Added "Trace" action in Scoped Dependency Inventory rows and "Navigate to Incident & Impact Trace (A08/A09)" in the dependency detail inspection drawer.
+     - Smoothly scrolls and focuses the Incident Evidence & Causal Impact drawer (`#incident-inspection-drawer`).
+     - Explicitly preserved lineage integrity disclosure: "Declared/inferred links are not proof of zero or proven affected workflows. Lineage requires verified runtime read provenance."
+  4. **Verification & Suite Coverage:**
+     - 128 vitest tests passing across all 7 workspace packages (`pnpm test`).
+     - Monorepo production build clean (`pnpm -r run build`).
+     - Monorepo typecheck passing with 0 errors (`pnpm -r run typecheck`).
+     - Planning integrity validated (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `apps/web/src/App.tsx`
+  - `apps/web/src/App.test.tsx`
+  - `.scratch/driftguard/issues/34-sdk-onboarding-dashboard.md`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33, 12, 34.
+  - Next in line in topological order: **Ticket 35** (`chandrabhan-kushwaha`: "[P0] 35: Run the golden end-to-end connected demo path").
+
 
 
 
