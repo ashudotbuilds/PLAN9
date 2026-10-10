@@ -224,5 +224,27 @@ Never include credentials or rewrite another contributor's history.
 - **Log commit identifier:** `docs: record issue 02 main integration and closure in dev log`.
 - **Log publication:** Confirmed pushed at `main`.
 
+## 2026-10-11 — Ticket 03: Inject and detect a user field rename
+
+- **Task:** Issue #3 ([P0] 03: Inject and detect a user field rename).
+- **Authenticated identity:** ashudotbuilds
+- **Status:** COMPLETED. Feature pushed to `origin/codex/issue-03-inject-and-detect-user-drift`.
+- **Scope & Governance:** PRD FR-SIM-02, FR-SIM-03, FR-DET-01, FR-DET-02, FR-DET-03, FR-DET-05, FR-UI-03, FR-MON-01, NFR-20; endpoints `POST /api/scenarios/:scenarioId/inject` (A05), `POST /api/observations/run` (A06), `GET /api/incidents` (A07), `GET /api/incidents/:incidentId` (A08). Implemented scenario injection on mock-providers without restart or source code modification (`users.field-rename`), observation execution and diffing against healthy baseline fixtures across 3 stable identities (`u-123`, `u-456`, `u-789`), corroborated evidence scoring (`confirmed`), deduplicated deterministic fingerprint calculation (`dg-fp:users:/api/v1/users:rename:name->display_name`), full before/after response payload evidence attachment, workflow invariant failure detection (welcome_email, customer_profile), and control-plane web inspection drawer.
+- **Changes made:**
+  - `packages/contracts`: Added contracts for `InjectScenarioRequestSchema`, `InjectScenarioResponseSchema`, `FindingTypeSchema`, `EvidenceStrengthSchema`, `FindingSchema`, `IncidentSummarySchema`, `ListIncidentsResponseSchema`, `IncidentDetailSchema`, `IncidentDetailResponseSchema`, `RunObservationsRequestSchema`, `RunObservationsResponseSchema`, and extended `DemoStateResponseSchema` with `incidents` and `activeScenarios`.
+  - `apps/api`: Created `IncidentService` (`apps/api/src/services/incident-service.ts`) handling scenario injection dispatch, live mock observations, baseline diffing, corroboration ranking, fingerprint deduplication, and workflow invariant check failures; updated `ProjectService.getDemoState` to project incidents and active scenarios; mounted endpoints A05, A06, A07, A08 in `apps/api/src/app.ts`.
+  - `apps/web`: Added client methods in `api-client.ts` (`injectScenario`, `runObservations`, `listIncidents`, `getIncident`); updated `App.tsx` with Scenario Injection panel, Live Observation Run trigger, Incident Summary list badges, and an interactive Incident Detail & Evidence drawer.
+  - `apps/api/tests/api.test.ts`: Added automated integration tests for scenario injection, observation execution, deduplication across runs, corroborated evidence strength, and incident detail retrieval.
+  - `apps/web/src/App.test.tsx`: Added UI integration tests for scenario injection and observation execution.
+  - `.scratch/driftguard/issues/03-inject-and-detect-user-drift.md`: Completed acceptance criteria checklist and marked status as completed.
+- **Verification:**
+  - `pnpm -r run build`: All 4 packages compiled cleanly.
+  - `pnpm -r run typecheck`: 0 TypeScript errors across all 4 packages.
+  - `vitest run`: 40 of 40 tests passed across all 4 suites (`@driftguard/contracts`, `@driftguard/mock-providers`, `@driftguard/api`, `@driftguard/web`).
+  - `node scripts/validate-planning.mjs`: All 41 tickets, 97 requirements, 37 API routes, and 17 SDK gates validated successfully.
+- **Branch:** `codex/issue-03-inject-and-detect-user-drift`.
+- **Feature commit:** `bd5e035`.
+- **Confirmed push:** Confirmed push to `origin/codex/issue-03-inject-and-detect-user-drift`.
+
 
 
