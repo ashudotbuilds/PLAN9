@@ -135,4 +135,18 @@ Never include credentials or rewrite another contributor's history.
 - **Feature commit:** `5ba1f0ef8d0e073ec539a6bcb675af642989dd0b`.
 - **Confirmed push:** Confirmed push to `origin/codex/issue-01-healthy-demo-startup`.
 - **Log commit identifier:** `docs: record issue 01 completion in dev log`.
+- **Log publication:** Confirmed pushed at `432f1f62f4a9a8e19dc10f308c0351cfb04836e8`.
+
+## 2026-10-11 — Main integration: Issue #1 closure and frontier advancement
+
+- **Task:** User authorized fast-forward integration of completed Issue #1 into `main`, closure of GitHub Issue #1, and team frontier update.
+- **Authenticated identity:** ashudotbuilds via GitHub API and Git credentials.
+- **Status:** PUSHED to origin/main; Issue #1 closed on GitHub.
+- **Scope:** Default-branch publication of Ticket 01 implementation and dev log.
+- **Integration:** Fast-forward merged `codex/issue-01-healthy-demo-startup` (commits `5ba1f0e` and `432f1f6`) into `main`. Pushed to `origin/main`. Closed GitHub Issue #1 (state: `closed`, reason: `completed`).
+- **Team Frontier Status:**
+  - Ticket 01 is COMPLETED and closed.
+  - Ticket 28 (`ashudotbuilds`: "Create a scoped local project through operator onboarding") is now UNBLOCKED and eligible to start.
+  - Ticket 02 (`saransh-sh`: "Capture a healthy baseline and trace workflow reads") remains blocked on Ticket 28.
+- **Log commit identifier:** `docs: record issue 1 main integration and closure in dev log`.
 - **Log publication:** Pending at entry creation; reported in final response.
