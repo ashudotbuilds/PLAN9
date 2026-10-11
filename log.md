@@ -1187,6 +1187,55 @@ Never include credentials or rewrite another contributor's history.
   - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33, 12, 34, 35, 13, 14, 15.
   - Next in line in topological order: **Ticket 16** (`saransh-sh`: "[P1] 16: Validate an optional bounded pagination strategy").
 
+## 2026-10-11T06:03:00Z — Ticket 16: Validate an optional bounded pagination strategy (#16)
+- **Author / Authenticated Login:** `saransh-sh` (`saransh@driftguard.local`)
+- **Status:** PUSHED
+- **Feature Commit:** `6f5f12b68aaae646e8b6f5f777d92e19760486a2`
+- **Target Branch / Remote:** `origin/main` (confirmed pushed)
+- **Scope & Governance:** PRD FR-SIM-05, FR-OBS-06, FR-DET-06, FR-VAL-07, NFR-20; sections 13, 13.4, 22. Endpoints `POST /api/incidents/:incidentId/propose-repair` (A10), `POST /api/patches/:patchId/validate` (A11), `POST /api/patches/:patchId/activate` (A12), `POST /api/patches/:patchId/rollback` (A13).
+- **Implementation summary:**
+  1. **Contract Definitions (`packages/contracts/src/index.ts`):**
+     - Added `BoundedPaginationStrategySchema` and TypeScript type `BoundedPaginationStrategy` specifying immutable parameters: `strategyType: 'cursor_traversal'`, `provider: 'inventory'`, `targetEntity: 'CanonicalInventory'`, `version: number`, `cursorParam: 'cursor'`, `cursorPath: '$.next_cursor'`, `itemsPath: '$.items'`, `uniqueKey: 'sku'`, `maxRequests: number` (bounded min 1, max 10, default 5), `hash: string`, and `diff: string`.
+     - Extended `AdapterPatchSchema` with optional `strategy?: BoundedPaginationStrategySchema.optional()`.
+     - Extended `RepairProposalSchema` with optional `paginationStrategy?: BoundedPaginationStrategySchema.optional()`.
+     - Extended `ProposeRepairRequestSchema` with optional `strategy?: z.union([z.string(), BoundedPaginationStrategySchema]).optional()`.
+     - Extended `ActiveAdapterSchema` with optional `strategy?: BoundedPaginationStrategySchema.optional()`.
+  2. **Strategy Validation Engine (`apps/api/src/services/pagination-strategy-validator.ts`):**
+     - Implemented `PaginationStrategyValidator` executing cursor-based traversal over HTTP against provider boundaries.
+     - Enforces 5 core safety invariants:
+       - Cryptographic strategy hash match against canonical fields via SHA-256 (`computeStrategyHash`).
+       - Bounded request limit: aborts immediately with `REQUEST_LIMIT_EXCEEDED` if traversal exceeds `maxRequests`.
+       - Cursor loop detection: tracks visited cursors in a `seenCursors` set; aborts immediately with `CURSOR_LOOP_DETECTED` if any cursor repeats.
+       - Exactly-once deduplication: checks item keys (`uniqueKey: 'sku'`); aborts with `DUPLICATE_ITEM_DETECTED` if duplicate items appear across pages.
+       - Clean termination and exact item set verification: verifies `next_cursor: null` / `has_more: false` and confirms all expected items (`WIDGET-A`, `GADGET-B`, `SENSOR-C`) are retrieved without omission (`ITEM_SET_OMISSION`).
+       - Successfully handles empty inventory (`items: []`, `next_cursor: null`).
+  3. **Control Plane Seam Updates (`apps/api/src/services/incident-service.ts` & `apps/api/src/app.ts`):**
+     - `proposeRepair` (A10): when invoked with `strategy: 'cursor_traversal'` on inventory pagination drift, synthesizes candidate bounded strategy adapter (`adp_v2`) with confidence 0.92, recommendation `recommended`, and mandatory checks `bounded_request_limit_verified`, `zero_cursor_loop_verified`, `exact_item_set_verified`. Default request without strategy preserves safe migration proposal hold (`P0 DSL CANNOT AUTO-ADAPT`).
+     - `validatePatch` (A11): evaluates candidate patch with `PaginationStrategyValidator`. Passes gates 2, 3, 4, 5, 7, 8; evaluates to `status: 'passed'`, `eligibility: 'eligible'`, and marks `inventory_sync` outcome `passed`. Rejects tampered patch/strategy hashes with `409 PATCH_HASH_MISMATCH`.
+     - `activatePatch` (A12): activates strategy adapter, stores active strategy version, executes post-activation replay for `inventory_sync` against live provider, transitions incident to `recovered`. Rejects unvalidated or mismatched patches.
+     - `rollbackPatch` (A13): rolls back active inventory strategy adapter to parent version v1 and updates incident status to `rolled_back`.
+  4. **Control Plane Dashboard Enhancements (`apps/web/src/App.tsx` & `apps/web/src/api-client.ts`):**
+     - Added "Propose Bounded Pagination Strategy (Ticket 16)" action in incident workspace for inventory incidents.
+     - Added Strategy card display in Repair Proposal drawer detailing traversal type, bounded max requests, cursor param, unique key, and cryptographic strategy hash.
+  5. **Verification & Suite Coverage:**
+     - Added comprehensive unit and integration tests for Ticket 16 in `apps/api/tests/api.test.ts` covering: two-page traversal, empty inventory, cursor loop rejection, duplicate item rejection, omitted item rejection, request limit bound, strategy modification refusal, and foreign-scope isolation.
+     - All 163 tests passing across all 9 suites in monorepo (`pnpm test`).
+     - Monorepo production build clean (`pnpm -r run build`).
+     - Planning integrity fully compliant (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `packages/contracts/src/index.ts`
+  - `apps/api/src/services/pagination-strategy-validator.ts`
+  - `apps/api/src/services/incident-service.ts`
+  - `apps/api/src/app.ts`
+  - `apps/api/tests/api.test.ts`
+  - `apps/web/src/api-client.ts`
+  - `apps/web/src/App.tsx`
+  - `.scratch/driftguard/issues/16-pagination-strategy-repair.md`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33, 12, 34, 35, 13, 14, 15, 16.
+  - Next in line in topological order: **Ticket 17** (`saransh-sh`: "[P1] 17: Trace rate-limit responses and hold payment-like retries").
+
 
 
 
