@@ -1092,7 +1092,51 @@ Never include credentials or rewrite another contributor's history.
 - **Team Frontier Status:**
   - **ALL 21 P0 TICKETS COMPLETED AND CLOSED!** (01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33, 12, 34, 35, 13).
   - P0 release milestone fully achieved. P1 phase is now UNBLOCKED!
-  - Next in line in topological order: **Ticket 14** (`ashudotbuilds`: "[P1] 14: Wire optional live model provider into repair proposal").
+  - Next in line in topological order: **Ticket 14** (`saransh-sh`: "[P1] 14: Generate proposals through an optional live model").
+
+---
+
+## Entry: 2026-10-11 - Ticket 14: Generate Proposals Through an Optional Live Model (feat/#14)
+
+- **Date:** 2026-10-11
+- **Operator:** `saransh-sh` pair programming with `ashudotbuilds`
+- **Issue:** [#14](https://github.com/ashudotbuilds/PLAN9/issues/14)
+- **Code Commit:** `c32899d`
+- **Status:** COMPLETED, VERIFIED, AND INTEGRATED into main; Ticket #14 closed.
+- **Scope:** PRD FR-REP-02, FR-REP-04, FR-REP-06, NFR-07, NFR-08, FR-MON-01, NFR-21. Sections 12.6, 13, 22. Endpoints A10, A16.
+- **Implementation summary:**
+  1. **Minimal Redacted Live Repair Model Provider (`apps/api/src/services/repair-model.ts`):**
+     - Implemented `LiveRepairModel` adhering to `RepairModel` interface.
+     - Strips operator tokens, ingestion keys, cookies, private auth headers, and environment configs before model synthesis.
+     - Formats minimal prompt strictly containing `{ provider, endpoint, findings, canonicalFields }`.
+     - Output validation via Zod `ModelRepairOutputSchema` rejecting executable code injection and invalid ASTs with 422 `INVALID_MODEL_OUTPUT`.
+     - 3000ms timeout boundary with `AbortController`, recording timeout uncertainty notes.
+  2. **Control Plane Seam Integration (`apps/api/src/services/incident-service.ts`, `apps/api/src/app.ts`):**
+     - Extended `proposeRepair` and `startRecoveryRun` to accept optional `model: 'deterministic_fallback' | 'live_model'`.
+     - Distinctly marks proposal source as `model_proposal` (live model) vs `deterministic_fallback`.
+     - Live proposals undergo identical hash calculation, shadow validation gates, and immutable hash invariant verification (`409 PATCH_HASH_MISMATCH` on tampering).
+     - Graceful fallback to deterministic engine on timeout/network failure with uncertainty audit notes; malformed/forbidden outputs strictly rejected with 422.
+  3. **Operational Recovery UI Enhancements (`apps/web/src/App.tsx`):**
+     - Added Model Strategy selector dropdown (`deterministic_fallback` vs `live_model`) to Repair Proposal panel.
+     - Added distinct badges: `LIVE MODEL PROPOSAL` (purple badge) vs `DETERMINISTIC FALLBACK` (green badge).
+     - Model proposal uncertainty notes and required checks visibly surfaced in proposal card.
+  4. **Verification & Suite Coverage:**
+     - 152 vitest tests passing across all 9 workspace suites (`pnpm test`).
+     - Monorepo production build clean (`pnpm -r run build`).
+     - Planning integrity validated with 100% checks passing (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `packages/contracts/src/index.ts`
+  - `apps/api/src/app.ts`
+  - `apps/api/src/services/incident-service.ts`
+  - `apps/api/src/services/repair-model.ts`
+  - `apps/api/tests/api.test.ts`
+  - `apps/web/src/App.tsx`
+  - `.scratch/driftguard/issues/14-optional-live-repair-model.md`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33, 12, 34, 35, 13, 14.
+  - Next in line in topological order: **Ticket 15** (`chandrabhan-kushwaha`: "[P1] 15: Detect and classify pagination drift").
+
 
 
 
