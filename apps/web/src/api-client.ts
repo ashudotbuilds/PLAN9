@@ -408,7 +408,8 @@ export class ApiClient {
     projectId: string,
     environment: ProjectEnvironment,
     sessionId?: string,
-    model?: string
+    model?: string,
+    strategy?: string | any
   ): Promise<ProposeRepairResponse> {
     const res = await fetch(`${this.apiBase}/incidents/${incidentId}/propose-repair`, {
       method: 'POST',
@@ -416,7 +417,7 @@ export class ApiClient {
         'Content-Type': 'application/json'
       },
       credentials: 'include',
-      body: JSON.stringify({ projectId, environment, sessionId, model })
+      body: JSON.stringify({ projectId, environment, sessionId, model, strategy })
     });
 
     if (!res.ok) {

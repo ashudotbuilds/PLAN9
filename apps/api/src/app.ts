@@ -681,8 +681,9 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     const projectId = body.projectId || query.projectId || 'prj_demo_default';
     const sessionId = body.sessionId || query.sessionId;
     const model = body.model || 'deterministic_fallback';
+    const strategy = (body as any).strategy || (query as any).strategy;
 
-    const result = await incidentService.proposeRepair(incidentId, projectId, environment, sessionId, model);
+    const result = await incidentService.proposeRepair(incidentId, projectId, environment, sessionId, model, strategy);
     return reply.status(200).send(result);
   });
 

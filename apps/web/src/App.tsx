@@ -581,7 +581,7 @@ export function App() {
     }
   };
 
-  const handleProposeRepair = async (incidentId: string) => {
+  const handleProposeRepair = async (incidentId: string, strategyOption?: string) => {
     setProposingRepair(true);
     setProposalError(null);
     try {
@@ -590,7 +590,8 @@ export function App() {
         selectedProjectId,
         selectedEnvironment,
         baseline?.sessionId,
-        selectedRepairModel
+        selectedRepairModel,
+        strategyOption
       );
       setRepairProposal(res.proposal);
       setSelectedIncident((prev) => {
@@ -2259,6 +2260,15 @@ pnpm --filter @driftguard/sample-consumer start`}
                         >
                           {proposingRepair ? 'Proposing Repair...' : 'Propose Compatible Adapter (A10)'}
                         </button>
+                        {selectedIncident.provider === 'inventory' && (
+                          <button
+                            onClick={() => handleProposeRepair(selectedIncident.id, 'cursor_traversal')}
+                            disabled={proposingRepair}
+                            className="px-3 py-1 bg-[#1f6feb] hover:bg-[#388bfd] disabled:opacity-50 text-white rounded text-xs font-medium transition cursor-pointer"
+                          >
+                            {proposingRepair ? 'Proposing...' : 'Propose Bounded Pagination Strategy (Ticket 16)'}
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -2288,11 +2298,36 @@ pnpm --filter @driftguard/sample-consumer start`}
                                 DETERMINISTIC FALLBACK
                               </span>
                             )}
+                            {(repairProposal || selectedIncident.proposals?.[0])?.patch.strategy && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#1f6feb]/20 text-[#58a6ff] border border-[#1f6feb]/40">
+                                BOUNDED PAGINATION
+                              </span>
+                            )}
                           </div>
                           <span className="text-[10px] text-[#8b949e]">
                             {`Proposal ID: ${(repairProposal || selectedIncident.proposals?.[0])?.id}`}
                           </span>
                         </div>
+
+                        {/* Strategy Details if present */}
+                        {(repairProposal || selectedIncident.proposals?.[0])?.patch.strategy && (
+                          <div className="p-2.5 bg-[#0d1117] border border-[#1f6feb]/40 rounded space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#1f6feb]/20 text-[#58a6ff] border border-[#1f6feb]/40">
+                                BOUNDED PAGINATION STRATEGY
+                              </span>
+                              <span className="text-[10px] text-[#8b949e]">
+                                {`Strategy Hash: ${(repairProposal || selectedIncident.proposals?.[0])?.patch.strategy?.hash.slice(0, 16)}...`}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[11px] text-[#8b949e]">
+                              <div>Type: <span className="text-[#f0f6fc]">{(repairProposal || selectedIncident.proposals?.[0])?.patch.strategy?.strategyType}</span></div>
+                              <div>Max Requests: <span className="text-[#f0f6fc]">{(repairProposal || selectedIncident.proposals?.[0])?.patch.strategy?.maxRequests}</span></div>
+                              <div>Cursor Param: <span className="text-[#f0f6fc]">{(repairProposal || selectedIncident.proposals?.[0])?.patch.strategy?.cursorParam}</span></div>
+                              <div>Unique Key: <span className="text-[#f0f6fc]">{(repairProposal || selectedIncident.proposals?.[0])?.patch.strategy?.uniqueKey}</span></div>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Adapter Diff */}
                         <div className="space-y-1">

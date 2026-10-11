@@ -3565,6 +3565,392 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(actRes.json().error.code).toBe('PATCH_NOT_ELIGIBLE');
     });
   });
+
+  describe('Ticket 16: Validate an Optional Bounded Pagination Strategy (FR-SIM-05, FR-OBS-06, FR-DET-06, FR-VAL-07, NFR-20)', () => {
+    let baselineService: any;
+    let incidentService: any;
+    let mockFetch: any;
+    let activeScenarios: string[];
+    let customInventoryHandler: ((url: string) => any) | null = null;
+
+    beforeEach(async () => {
+      activeScenarios = [];
+      customInventoryHandler = null;
+      mockFetch = vi.fn(async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.includes('/scenarios/') && u.includes('/inject')) {
+          const sc = u.split('/scenarios/')[1]?.split('/inject')[0];
+          if (sc) activeScenarios.push(sc);
+          return { ok: true, json: async () => ({ ok: true, activeScenarios }) };
+        }
+        if (u.includes('/scenarios/reset') || u.includes('/__control/reset')) {
+          activeScenarios = [];
+          return { ok: true, json: async () => ({ ok: true, activeScenarios: [] }) };
+        }
+        if (u.includes('/users/')) {
+          const id = u.split('/users/')[1]?.split('?')[0] || 'u-123';
+          return { ok: true, json: async () => ({ id, name: 'Aarav' }) };
+        }
+        if (u.includes('/shipping/estimate')) {
+          return { ok: true, json: async () => ({ estimated_delivery_date: '2026-10-12' }) };
+        }
+        if (u.includes('/inventory/items')) {
+          if (customInventoryHandler) {
+            return customInventoryHandler(u);
+          }
+          if (activeScenarios.includes('inventory.cursor-pagination')) {
+            if (u.includes('cursor=cur_inv_page_2')) {
+              return {
+                ok: true,
+                json: async () => ({
+                  items: [{ id: 'inv-103', sku: 'SENSOR-C', quantity: 120, in_stock: true }],
+                  next_cursor: null,
+                  has_more: false
+                })
+              };
+            }
+            return {
+              ok: true,
+              json: async () => ({
+                items: [
+                  { id: 'inv-101', sku: 'WIDGET-A', quantity: 45, in_stock: true },
+                  { id: 'inv-102', sku: 'GADGET-B', quantity: 0, in_stock: false }
+                ],
+                next_cursor: 'cur_inv_page_2',
+                has_more: true
+              })
+            };
+          }
+          return {
+            ok: true,
+            json: async () => ({
+              items: [
+                { id: 'inv-101', sku: 'WIDGET-A', quantity: 45, in_stock: true },
+                { id: 'inv-102', sku: 'GADGET-B', quantity: 0, in_stock: false },
+                { id: 'inv-103', sku: 'SENSOR-C', quantity: 120, in_stock: true }
+              ],
+              total: 3,
+              page: 1,
+              limit: 10
+            })
+          };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      await baselineService.captureBaseline('prj_demo_default', 'development', 'sess_1');
+      incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+    });
+
+    it('proposes bounded pagination strategy when explicitly requested (A10)', async () => {
+      await incidentService.injectScenario('inventory.cursor-pagination', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+      const propRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/propose-repair`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'prj_demo_default',
+          environment: 'development',
+          strategy: 'cursor_traversal'
+        }
+      });
+
+      expect(propRes.statusCode).toBe(200);
+      const proposal = propRes.json().proposal;
+      expect(proposal.recommendation).toBe('recommended');
+      expect(proposal.confidence).toBeGreaterThan(0.9);
+      expect(proposal.patch.strategy).toBeDefined();
+      expect(proposal.patch.strategy.strategyType).toBe('cursor_traversal');
+      expect(proposal.patch.strategy.maxRequests).toBe(5);
+      expect(proposal.patch.strategy.cursorParam).toBe('cursor');
+      expect(proposal.patch.diff).toContain('pagination: cursor_traversal');
+    });
+
+    it('validates two-page inventory traversal and activates strategy adapter (A11, A12, A13)', async () => {
+      await incidentService.injectScenario('inventory.cursor-pagination', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      // 1. Propose bounded pagination strategy
+      const propRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/propose-repair`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'prj_demo_default',
+          environment: 'development',
+          strategy: 'cursor_traversal'
+        }
+      });
+      const proposal = propRes.json().proposal;
+
+      // 2. Validate patch with strategy
+      const valRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${proposal.patch.id}/validate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { patchHash: proposal.patch.hash }
+      });
+
+      expect(valRes.statusCode).toBe(200);
+      const valRun = valRes.json().validationRun;
+      expect(valRun.status).toBe('passed');
+      expect(valRun.eligibility).toBe('eligible');
+
+      const invOutcome = valRun.workflowOutcomes.find((w: any) => w.workflowId === 'inventory_sync');
+      expect(invOutcome.status).toBe('passed');
+      expect(invOutcome.details).toContain('Bounded pagination strategy validated cleanly');
+
+      // 3. Activate validated strategy patch
+      const actRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${proposal.patch.id}/activate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { patchHash: proposal.patch.hash }
+      });
+
+      expect(actRes.statusCode).toBe(200);
+      const actData = actRes.json();
+      expect(actData.recoveryStatus).toBe('recovered');
+      expect(actData.incidentStatus).toBe('recovered');
+      expect(actData.activeAdapter.strategy).toBeDefined();
+      expect(actData.activeAdapter.strategy.strategyType).toBe('cursor_traversal');
+      expect(actData.postActivationReplay.status).toBe('passed');
+      expect(actData.postActivationReplay.replays[0].workflowId).toBe('inventory_sync');
+      expect(actData.postActivationReplay.replays[0].status).toBe('passed');
+
+      // 4. Rollback active strategy adapter
+      const rollRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${proposal.patch.id}/rollback`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { projectId: 'prj_demo_default', environment: 'development' }
+      });
+      expect(rollRes.statusCode).toBe(200);
+      expect(rollRes.json().incidentStatus).toBe('rolled_back');
+      expect(rollRes.json().restoredAdapter.version).toBe(1);
+    });
+
+    it('handles empty inventory cleanly without error', async () => {
+      customInventoryHandler = () => ({
+        ok: true,
+        json: async () => ({
+          items: [],
+          next_cursor: null,
+          has_more: false
+        })
+      });
+
+      const { PaginationStrategyValidator } = await import('../src/services/pagination-strategy-validator.js');
+      const validator = new PaginationStrategyValidator({ fetchFn: mockFetch as any });
+
+      const strat = {
+        id: 'strat_empty_test',
+        strategyType: 'cursor_traversal' as const,
+        provider: 'inventory' as const,
+        targetEntity: 'CanonicalInventory' as const,
+        version: 1,
+        cursorParam: 'cursor',
+        cursorPath: '$.next_cursor',
+        itemsPath: '$.items',
+        uniqueKey: 'sku',
+        maxRequests: 5,
+        hash: '',
+        diff: ''
+      };
+      strat.hash = PaginationStrategyValidator.computeStrategyHash(strat);
+
+      const result = await validator.validateStrategy(strat, { expectedItems: [] });
+      expect(result.passed).toBe(true);
+      expect(result.totalRequests).toBe(1);
+      expect(result.itemsRetrieved).toHaveLength(0);
+      expect(result.terminatedCleanly).toBe(true);
+    });
+
+    it('rejects cursor loop, duplicate items, and omitted items', async () => {
+      const { PaginationStrategyValidator } = await import('../src/services/pagination-strategy-validator.js');
+      const validator = new PaginationStrategyValidator({ fetchFn: mockFetch as any });
+
+      const baseStrat = {
+        id: 'strat_rejection_test',
+        strategyType: 'cursor_traversal' as const,
+        provider: 'inventory' as const,
+        targetEntity: 'CanonicalInventory' as const,
+        version: 1,
+        cursorParam: 'cursor',
+        cursorPath: '$.next_cursor',
+        itemsPath: '$.items',
+        uniqueKey: 'sku',
+        maxRequests: 5,
+        hash: '',
+        diff: ''
+      };
+      baseStrat.hash = PaginationStrategyValidator.computeStrategyHash(baseStrat);
+
+      // 1. Cursor Loop
+      customInventoryHandler = (url: string) => {
+        return {
+          ok: true,
+          json: async () => ({
+            items: [{ id: '1', sku: 'ITEM-1' }],
+            next_cursor: 'loop_cursor_same',
+            has_more: true
+          })
+        };
+      };
+      const loopRes = await validator.validateStrategy(baseStrat);
+      expect(loopRes.passed).toBe(false);
+      expect(loopRes.code).toBe('CURSOR_LOOP_DETECTED');
+      expect(loopRes.loopDetected).toBe(true);
+
+      // 2. Duplicate Items
+      let callCount = 0;
+      customInventoryHandler = (url: string) => {
+        callCount++;
+        if (callCount === 1) {
+          return {
+            ok: true,
+            json: async () => ({
+              items: [{ id: '1', sku: 'WIDGET-A' }],
+              next_cursor: 'page_2',
+              has_more: true
+            })
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            items: [{ id: '2', sku: 'WIDGET-A' }], // duplicate SKU
+            next_cursor: null,
+            has_more: false
+          })
+        };
+      };
+      const dupRes = await validator.validateStrategy(baseStrat);
+      expect(dupRes.passed).toBe(false);
+      expect(dupRes.code).toBe('DUPLICATE_ITEM_DETECTED');
+      expect(dupRes.duplicatesDetected).toContain('WIDGET-A');
+
+      // 3. Omitted Expected Items
+      customInventoryHandler = () => ({
+        ok: true,
+        json: async () => ({
+          items: [{ id: '1', sku: 'WIDGET-A' }],
+          next_cursor: null,
+          has_more: false
+        })
+      });
+      const omitRes = await validator.validateStrategy(baseStrat, {
+        expectedItems: [{ sku: 'WIDGET-A' }, { sku: 'GADGET-B' }, { sku: 'SENSOR-C' }]
+      });
+      expect(omitRes.passed).toBe(false);
+      expect(omitRes.code).toBe('ITEM_SET_OMISSION');
+      expect(omitRes.omissionsDetected).toContain('GADGET-B');
+      expect(omitRes.omissionsDetected).toContain('SENSOR-C');
+    });
+
+    it('enforces request limit bound and rejects tampered strategy hash (FR-VAL-05)', async () => {
+      // 1. Request Limit Exceeded
+      customInventoryHandler = (url: string) => ({
+        ok: true,
+        json: async () => ({
+          items: [{ id: String(Math.random()), sku: `SKU-${Math.random()}` }],
+          next_cursor: `next_${Math.random()}`,
+          has_more: true
+        })
+      });
+
+      const { PaginationStrategyValidator } = await import('../src/services/pagination-strategy-validator.js');
+      const validator = new PaginationStrategyValidator({ fetchFn: mockFetch as any });
+
+      const boundStrat = {
+        id: 'strat_bound_test',
+        strategyType: 'cursor_traversal' as const,
+        provider: 'inventory' as const,
+        targetEntity: 'CanonicalInventory' as const,
+        version: 1,
+        cursorParam: 'cursor',
+        cursorPath: '$.next_cursor',
+        itemsPath: '$.items',
+        uniqueKey: 'sku',
+        maxRequests: 3,
+        hash: '',
+        diff: ''
+      };
+      boundStrat.hash = PaginationStrategyValidator.computeStrategyHash(boundStrat);
+
+      const limitRes = await validator.validateStrategy(boundStrat);
+      expect(limitRes.passed).toBe(false);
+      expect(limitRes.code).toBe('REQUEST_LIMIT_EXCEEDED');
+      expect(limitRes.totalRequests).toBe(3);
+
+      // 2. Tampered Strategy Hash
+      const tamperedStrat = { ...boundStrat, hash: 'bad_hash_1234' };
+      const tamperRes = await validator.validateStrategy(tamperedStrat);
+      expect(tamperRes.passed).toBe(false);
+      expect(tamperRes.code).toBe('STRATEGY_HASH_MISMATCH');
+    });
+
+    it('rejects activation with foreign-scope patch or mismatched hash', async () => {
+      await incidentService.injectScenario('inventory.cursor-pagination', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+      const propRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/propose-repair`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'prj_demo_default',
+          environment: 'development',
+          strategy: 'cursor_traversal'
+        }
+      });
+      const proposal = propRes.json().proposal;
+
+      // Validate patch
+      await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${proposal.patch.id}/validate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { patchHash: proposal.patch.hash }
+      });
+
+      // 1. Activation with mismatched candidate hash fails 409
+      const actMismatch = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${proposal.patch.id}/activate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { patchHash: 'modified_tampered_hash_999' }
+      });
+      expect(actMismatch.statusCode).toBe(409);
+      expect(actMismatch.json().error.code).toBe('PATCH_HASH_MISMATCH');
+
+      // 2. Activation in foreign project scope fails 404
+      const actForeign = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${proposal.patch.id}/activate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'prj_foreign_scope',
+          environment: 'development',
+          patchHash: proposal.patch.hash
+        }
+      });
+      expect(actForeign.statusCode).toBe(404);
+      expect(actForeign.json().error.code).toBe('PATCH_NOT_FOUND');
+    });
+  });
 });
 
 

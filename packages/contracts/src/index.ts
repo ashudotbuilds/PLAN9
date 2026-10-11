@@ -542,6 +542,23 @@ export const AdapterRuleSchema = z.object({
 });
 export type AdapterRule = z.infer<typeof AdapterRuleSchema>;
 
+// Ticket 16: Bounded Pagination Strategy Contracts
+export const BoundedPaginationStrategySchema = z.object({
+  id: z.string(),
+  strategyType: z.literal('cursor_traversal'),
+  provider: z.literal('inventory'),
+  targetEntity: z.literal('CanonicalInventory'),
+  version: z.number().int().positive(),
+  cursorParam: z.string().default('cursor'),
+  cursorPath: z.string().default('$.next_cursor'),
+  itemsPath: z.string().default('$.items'),
+  uniqueKey: z.string().default('sku'),
+  maxRequests: z.number().int().min(1).max(10).default(5),
+  hash: z.string(),
+  diff: z.string()
+});
+export type BoundedPaginationStrategy = z.infer<typeof BoundedPaginationStrategySchema>;
+
 export const AdapterPatchSchema = z.object({
   id: z.string(),
   hash: z.string(),
@@ -550,7 +567,8 @@ export const AdapterPatchSchema = z.object({
   version: z.number().int().positive(),
   rules: z.array(AdapterRuleSchema),
   preservedFields: z.array(z.string()),
-  diff: z.string()
+  diff: z.string(),
+  strategy: BoundedPaginationStrategySchema.optional()
 });
 export type AdapterPatch = z.infer<typeof AdapterPatchSchema>;
 
@@ -565,7 +583,8 @@ export const RepairProposalSchema = z.object({
   uncertainties: z.array(z.string()),
   requiredChecks: z.array(z.string()),
   createdAt: z.string().datetime(),
-  auditEventId: z.string()
+  auditEventId: z.string(),
+  paginationStrategy: BoundedPaginationStrategySchema.optional()
 });
 export type RepairProposal = z.infer<typeof RepairProposalSchema>;
 
@@ -573,7 +592,8 @@ export const ProposeRepairRequestSchema = z.object({
   projectId: z.string().optional(),
   environment: ProjectEnvironmentSchema.optional(),
   sessionId: z.string().optional(),
-  model: z.enum(['deterministic_fallback', 'custom', 'live_model']).optional()
+  model: z.enum(['deterministic_fallback', 'custom', 'live_model']).optional(),
+  strategy: z.union([z.string(), BoundedPaginationStrategySchema]).optional()
 });
 export type ProposeRepairRequest = z.infer<typeof ProposeRepairRequestSchema>;
 
@@ -712,7 +732,8 @@ export const ActiveAdapterSchema = z.object({
   rules: z.array(AdapterRuleSchema),
   preservedFields: z.array(z.string()),
   status: z.enum(['active', 'superseded', 'rolled_back']),
-  activatedAt: z.string().datetime()
+  activatedAt: z.string().datetime(),
+  strategy: BoundedPaginationStrategySchema.optional()
 });
 export type ActiveAdapter = z.infer<typeof ActiveAdapterSchema>;
 

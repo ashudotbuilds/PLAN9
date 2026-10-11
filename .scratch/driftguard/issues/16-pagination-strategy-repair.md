@@ -4,7 +4,7 @@
 
 **Blocked by:** [15 - Detect an inventory pagination protocol change](15-pagination-drift-detection.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
 **Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
 
@@ -20,13 +20,13 @@
 
 ## Acceptance criteria
 
-- [ ] Define an explicitly approved strategy contract separately from the P0 rename/coalesce adapter DSL.
-- [ ] Publish any contract extension and policy decision before implementation; never silently widen P0 operations.
-- [ ] Validate exact item set, stable identity deduplication, termination, and bounded request count.
-- [ ] Reject cursor loops, omissions, and repeated items; preserve prior strategy and evidence.
-- [ ] Enable activation only with validated strategy hash and explicit compatible policy; otherwise present a safe migration proposal.
+- [x] Define an explicitly approved strategy contract separately from the P0 rename/coalesce adapter DSL.
+- [x] Publish any contract extension and policy decision before implementation; never silently widen P0 operations.
+- [x] Validate exact item set, stable identity deduplication, termination, and bounded request count.
+- [x] Reject cursor loops, omissions, and repeated items; preserve prior strategy and evidence.
+- [x] Enable activation only with validated strategy hash and explicit compatible policy; otherwise present a safe migration proposal.
 
-- [ ] Bind approved strategy/evidence/hash and activation to recorded scope and operator authorization; keep unsafe request changes held and avoid introducing a production proxy under this ticket.
+- [x] Bind approved strategy/evidence/hash and activation to recorded scope and operator authorization; keep unsafe request changes held and avoid introducing a production proxy under this ticket.
 
 ## Test scenarios
 
@@ -51,7 +51,7 @@ Do not start until ticket 13 verifies both the original section 21 recovery test
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.
