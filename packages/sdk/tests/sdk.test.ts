@@ -475,4 +475,85 @@ describe('@driftguard/sdk - Unit & Contract Tests', () => {
     expect(diag.activeSessionId).toBeUndefined();
     await sdk.shutdown();
   });
+
+  it('resetSession clears registrations, active session, queued events, and allows clean re-registration', async () => {
+    let callCount = 0;
+    const mockFetch = vi.fn().mockImplementation(async () => {
+      callCount += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          dependencyId: `dep-${callCount}`,
+          sessionId: `sess-new-${callCount}`,
+          inventoryVersion: callCount,
+          collectionPolicy: {
+            version: '1',
+            mode: 'metadata_only',
+            rateLimitPerMinute: 60
+          }
+        })
+      };
+    });
+
+    const sdk = new DriftGuard({ ...validConfig, fetchFn: mockFetch });
+
+    // Initial registration
+    const reg1 = await sdk.registerDependency({ name: 'users-api', type: 'rest-api' });
+    expect(reg1.ok).toBe(true);
+    expect(reg1.sessionId).toBe('sess-new-1');
+
+    // Track request
+    const track1 = sdk.trackRequest({
+      dependencyId: reg1.dependencyId!,
+      method: 'GET',
+      routeTemplate: '/users/:id',
+      statusCode: 200,
+      durationMs: 12
+    });
+    expect(track1.queued).toBe(true);
+
+    const diag1 = await sdk.diagnostics();
+    expect(diag1.activeSessionId).toBe('sess-new-1');
+    expect(diag1.queuedCount).toBe(1);
+
+    // Call resetSession
+    sdk.resetSession();
+
+    const diagReset = await sdk.diagnostics();
+    expect(diagReset.activeSessionId).toBeUndefined();
+    expect(diagReset.queuedCount).toBe(0);
+
+    // Old dependency is no longer registered; tracking must be rejected
+    const trackAfterReset = sdk.trackRequest({
+      dependencyId: reg1.dependencyId!,
+      method: 'GET',
+      routeTemplate: '/users/:id',
+      statusCode: 200,
+      durationMs: 10
+    });
+    expect(trackAfterReset.queued).toBe(false);
+    expect(trackAfterReset.code).toBe('UNREGISTERED_DEPENDENCY');
+
+    // Re-register dependency after reset
+    const reg2 = await sdk.registerDependency({ name: 'users-api', type: 'rest-api' });
+    expect(reg2.ok).toBe(true);
+    expect(reg2.sessionId).toBe('sess-new-2');
+
+    const diagReReg = await sdk.diagnostics();
+    expect(diagReReg.activeSessionId).toBe('sess-new-2');
+
+    // New dependency can now track requests
+    const track2 = sdk.trackRequest({
+      dependencyId: reg2.dependencyId!,
+      method: 'GET',
+      routeTemplate: '/users/:id',
+      statusCode: 200,
+      durationMs: 8
+    });
+    expect(track2.queued).toBe(true);
+
+    await sdk.shutdown();
+  });
 });
+

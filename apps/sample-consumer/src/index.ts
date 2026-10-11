@@ -9,6 +9,7 @@ export interface SampleConsumerOptions {
   allowInsecureLoopback?: boolean;
   enableReviewedFixtures?: boolean;
   fetchFn?: typeof fetch;
+  demonstrateReset?: boolean;
 }
 
 export interface SampleRequestResult {
@@ -24,6 +25,11 @@ export interface SampleConsumerResult {
   requests: SampleRequestResult[];
   flush: { accepted: number; duplicate: number; dropped: number; code?: string };
   diagnostics: { acceptedCount: number; duplicateCount: number; droppedCount: number; activeSessionId?: string };
+  resetReRegistration?: {
+    resetSucceeded: boolean;
+    unregisteredTrackBlocked: boolean;
+    reRegistration: { ok: boolean; dependencyId?: string; sessionId?: string; code?: string };
+  };
 }
 
 export async function runSampleConsumer(options: SampleConsumerOptions = {}): Promise<SampleConsumerResult> {
