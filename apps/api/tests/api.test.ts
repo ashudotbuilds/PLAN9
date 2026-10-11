@@ -1243,7 +1243,7 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
       const incidentId = obsRes.incident!.id;
 
-      const propRes = incidentService.proposeRepair(incidentId, 'prj_demo_default', 'development', 'sess_1');
+      const propRes = await incidentService.proposeRepair(incidentId, 'prj_demo_default', 'development', 'sess_1');
       const patchId = propRes.proposal.patch.id;
       const patchHash = propRes.proposal.patch.hash;
 
@@ -1333,7 +1333,7 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       const incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
       await incidentService.injectScenario('users.field-rename', 'prj_demo_default', 'development', 'sess_1');
       const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
-      const propRes = incidentService.proposeRepair(obsRes.incident!.id, 'prj_demo_default', 'development', 'sess_1');
+      const propRes = await incidentService.proposeRepair(obsRes.incident!.id, 'prj_demo_default', 'development', 'sess_1');
       const patchId = propRes.proposal.patch.id;
 
       const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
@@ -3055,6 +3055,308 @@ describe('Control Plane API - Operator Auth & Projects', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json().accepted).toBe(1);
+    });
+  });
+
+  describe('Ticket 14: Optional Live Repair Model Integration (FR-REP-02, FR-REP-04, FR-REP-06, NFR-07, NFR-08)', () => {
+    let baselineService: any;
+    let mockFetch: any;
+    let IncidentService: any;
+
+    beforeEach(async () => {
+      let activeScenarios: string[] = [];
+      mockFetch = vi.fn(async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.includes('/scenarios/users.field-rename/inject')) {
+          activeScenarios.push('users.field-rename');
+          return { ok: true, json: async () => ({ ok: true, activeScenarios }) };
+        }
+        if (u.includes('/__control/reset') || u.includes('/scenarios/reset')) {
+          activeScenarios = [];
+          return { ok: true, json: async () => ({ ok: true, activeScenarios: [] }) };
+        }
+        if (u.includes('/users/')) {
+          const id = u.split('/users/')[1]?.split('?')[0] || 'u-123';
+          const nameMap: Record<string, string> = { 'u-123': 'Aarav', 'u-456': 'Meera', 'u-789': 'Kabir' };
+          const name = nameMap[id] || 'Aarav';
+          return {
+            ok: true,
+            json: async () => (activeScenarios.includes('users.field-rename') ? { id, display_name: name } : { id, name })
+          };
+        }
+        if (u.includes('/inventory/items')) {
+          return { ok: true, json: async () => ({ items: [{ sku: 'WIDGET-A', quantity: 15 }] }) };
+        }
+        if (u.includes('/shipping/estimate')) {
+          return { ok: true, json: async () => ({ estimated_delivery_date: '2026-10-18' }) };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const incMod = await import('../src/services/incident-service.js');
+      IncidentService = incMod.IncidentService;
+      baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      await baselineService.captureBaseline('prj_demo_default', 'development', 'sess_1');
+    });
+
+    it('generates proposal with source model_proposal when live model succeeds', async () => {
+      const mockModelFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          rules: [
+            {
+              targetField: 'displayName',
+              op: 'coalesce',
+              sources: ['display_name', 'name']
+            }
+          ],
+          confidence: 0.98,
+          recommendation: 'recommended',
+          rationale: 'Coalesce renamed field display_name with backward compatibility',
+          uncertainties: [],
+          requiredChecks: ['shadow_validation_v1']
+        })
+      });
+
+      const { LiveRepairModel } = await import('../src/services/repair-model.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      const liveModel = new LiveRepairModel({
+        endpoint: 'http://127.0.0.1:9999/v1/chat/completions',
+        apiKey: 'test-model-key',
+        fetchFn: mockModelFetch as any
+      });
+
+      const incidentService = new IncidentService(baselineService, {
+        fetchFn: mockFetch as any,
+        repairModel: liveModel
+      });
+
+      await incidentService.injectScenario('users.field-rename', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/propose-repair`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'prj_demo_default',
+          environment: 'development',
+          model: 'live_model'
+        }
+      });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+      expect(data.proposal.source).toBe('model_proposal');
+      expect(data.proposal.confidence).toBe(0.98);
+      expect(data.proposal.recommendation).toBe('recommended');
+      expect(data.proposal.patch.rules[0].targetField).toBe('displayName');
+    });
+
+    it('sanitizes prompt to omit tokens, cookies, operator secrets, and environment values', async () => {
+      let capturedBody: any;
+      const mockModelFetch = vi.fn().mockImplementation(async (_url, init) => {
+        capturedBody = JSON.parse(init.body);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            rules: [{ targetField: 'displayName', op: 'rename', sources: ['display_name'] }],
+            confidence: 0.9,
+            recommendation: 'recommended'
+          })
+        };
+      });
+
+      const { LiveRepairModel } = await import('../src/services/repair-model.js');
+      const liveModel = new LiveRepairModel({
+        endpoint: 'http://127.0.0.1:9999/v1/chat/completions',
+        apiKey: 'test-model-key',
+        fetchFn: mockModelFetch as any
+      });
+
+      const promptData = liveModel.formatPrompt({
+        incidentId: 'inc_test',
+        provider: 'users',
+        endpoint: '/users/:id',
+        findings: [
+          {
+            id: 'find_1',
+            type: 'field_removed',
+            fieldName: 'name',
+            description: 'Field removed in provider response',
+            evidenceStrength: 'confirmed',
+            provider: 'users',
+            endpoint: '/users/:id',
+            path: '$.name'
+          }
+        ],
+        canonicalFields: ['displayName', 'id']
+      });
+
+      expect(promptData.prompt).not.toContain('test-operator-token');
+      expect(promptData.prompt).not.toContain('dg_ing_');
+      expect(promptData.prompt).not.toContain('cookie');
+      expect(promptData.prompt).toContain('users');
+      expect(promptData.prompt).toContain('field_removed');
+    });
+
+    it('rejects malformed or forbidden model output with 422 INVALID_MODEL_OUTPUT', async () => {
+      const mockModelFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          // Missing required rules array
+          output: 'INVALID SYNTAX NOT ADAPTING RULES'
+        })
+      });
+
+      const { LiveRepairModel } = await import('../src/services/repair-model.js');
+      const liveModel = new LiveRepairModel({
+        endpoint: 'http://127.0.0.1:9999/v1/chat/completions',
+        apiKey: 'test-model-key',
+        fetchFn: mockModelFetch as any
+      });
+
+      const incidentService = new IncidentService(baselineService, {
+        fetchFn: mockFetch as any,
+        repairModel: liveModel
+      });
+
+      await incidentService.injectScenario('users.field-rename', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/propose-repair`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'prj_demo_default',
+          environment: 'development',
+          model: 'live_model'
+        }
+      });
+
+      expect(res.statusCode).toBe(422);
+      expect(res.json().error.code).toBe('INVALID_MODEL_OUTPUT');
+    });
+
+    it('gracefully falls back to deterministic fallback on timeout with recorded uncertainty', async () => {
+      const mockModelFetch = vi.fn().mockImplementation(async () => {
+        const abortErr: any = new Error('The operation was aborted');
+        abortErr.name = 'AbortError';
+        throw abortErr;
+      });
+
+      const { LiveRepairModel } = await import('../src/services/repair-model.js');
+      const liveModel = new LiveRepairModel({
+        endpoint: 'http://127.0.0.1:9999/v1/chat/completions',
+        apiKey: 'test-model-key',
+        fetchFn: mockModelFetch as any
+      });
+
+      const incidentService = new IncidentService(baselineService, {
+        fetchFn: mockFetch as any,
+        repairModel: liveModel
+      });
+
+      await incidentService.injectScenario('users.field-rename', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      const res = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/propose-repair`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'prj_demo_default',
+          environment: 'development',
+          model: 'live_model'
+        }
+      });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+      expect(data.proposal.source).toBe('deterministic_fallback');
+      expect(data.proposal.uncertainties.some((u: string) => u.includes('live_model_fallback'))).toBe(true);
+    });
+
+    it('validates and activates live model proposal with identical hash invariant checks', async () => {
+      const mockModelFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          rules: [{ targetField: 'displayName', op: 'coalesce', sources: ['display_name', 'name'] }],
+          confidence: 0.99,
+          recommendation: 'recommended'
+        })
+      });
+
+      const { LiveRepairModel } = await import('../src/services/repair-model.js');
+      const liveModel = new LiveRepairModel({
+        endpoint: 'http://127.0.0.1:9999/v1/chat/completions',
+        apiKey: 'test-model-key',
+        fetchFn: mockModelFetch as any
+      });
+
+      const incidentService = new IncidentService(baselineService, {
+        fetchFn: mockFetch as any,
+        repairModel: liveModel
+      });
+
+      await incidentService.injectScenario('users.field-rename', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      const propRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/propose-repair`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { model: 'live_model' }
+      });
+      const proposal = propRes.json().proposal;
+
+      // Validate proposal
+      const valRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${proposal.patch.id}/validate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { patchHash: proposal.patch.hash }
+      });
+      expect(valRes.statusCode).toBe(200);
+      expect(valRes.json().validationRun.eligibility).toBe('eligible');
+
+      // Tampered patch hash rejected
+      const tamperedRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${proposal.patch.id}/activate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { patchHash: 'tampered_hash_value' }
+      });
+      expect(tamperedRes.statusCode).toBe(409);
+      expect(tamperedRes.json().error.code).toBe('PATCH_HASH_MISMATCH');
+
+      // Valid activation succeeds
+      const actRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${proposal.patch.id}/activate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { patchHash: proposal.patch.hash }
+      });
+      expect(actRes.statusCode).toBe(200);
+      expect(actRes.json().recoveryStatus).toBe('recovered');
     });
   });
 });

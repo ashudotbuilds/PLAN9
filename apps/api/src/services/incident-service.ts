@@ -26,10 +26,12 @@ import {
 } from '@driftguard/contracts';
 import { randomUUID, createHash } from 'node:crypto';
 import { BaselineService } from './baseline-service.js';
+import { RepairModel, LiveRepairModel } from './repair-model.js';
 
 export interface IncidentServiceOptions {
   mockProvidersBaseUrl?: string;
   fetchFn?: typeof fetch;
+  repairModel?: RepairModel;
 }
 
 export class IncidentService {
@@ -40,6 +42,7 @@ export class IncidentService {
   private recoveryRuns = new Map<string, RecoveryRun>(); // keyed by recoveryRunId
   private mockProvidersBaseUrl: string;
   private fetchFn: typeof fetch;
+  private repairModel: RepairModel;
 
   constructor(
     private baselineService: BaselineService,
@@ -50,6 +53,7 @@ export class IncidentService {
       process.env.MOCK_PROVIDERS_URL ||
       'http://127.0.0.1:4001';
     this.fetchFn = options.fetchFn || fetch;
+    this.repairModel = options.repairModel || new LiveRepairModel({ fetchFn: this.fetchFn });
   }
 
   getActiveScenarios(): string[] {
@@ -657,13 +661,13 @@ export class IncidentService {
     return analysis;
   }
 
-  proposeRepair(
+  async proposeRepair(
     incidentId: string,
     projectId: string,
     environment: ProjectEnvironment,
     sessionId?: string,
-    _model: string = 'deterministic_fallback'
-  ): { proposal: RepairProposal; auditEventId: string } {
+    model: string = 'deterministic_fallback'
+  ): Promise<{ proposal: RepairProposal; auditEventId: string }> {
     const incident = this.getIncident(incidentId, projectId, environment);
     if (!incident) {
       const err = new Error(`Incident '${incidentId}' not found.`);
@@ -769,15 +773,63 @@ export class IncidentService {
       return { proposal, auditEventId };
     }
 
-    // P0 permits only rename/coalesce over known source and canonical paths
-    const rules: AdapterRule[] = [
+    // P0 / P1 proposals for field rename
+    let rules: AdapterRule[] = [
       {
         targetField: 'displayName',
         op: 'coalesce',
         sources: ['display_name', 'name']
       }
     ];
-    const preservedFields = ['id'];
+    let preservedFields = ['id'];
+    let source: 'deterministic_fallback' | 'model_proposal' = 'deterministic_fallback';
+    let confidence = 0.95;
+    let recommendation: 'recommended' | 'review_required' | 'rejected' = 'recommended';
+    let uncertainties: string[] = [];
+    let requiredChecks = [
+      'shadow_validation_v1',
+      'workflow_replay_welcome_email',
+      'workflow_replay_customer_profile'
+    ];
+    let diff = `--- CanonicalUserAdapter.v1
++++ CanonicalUserAdapter.v2 (proposed)
+@@ -1,3 +1,3 @@
+ id: raw.id
+-displayName: raw.name
++displayName: raw.display_name ?? raw.name`;
+
+    if (model === 'live_model') {
+      try {
+        const modelRes = await this.repairModel.generateProposal({
+          incidentId,
+          provider: incident.provider,
+          endpoint: incident.endpoint,
+          findings: incident.findings,
+          canonicalFields: ['displayName', 'id']
+        });
+        rules = modelRes.rules;
+        source = 'model_proposal';
+        confidence = modelRes.confidence;
+        recommendation = modelRes.recommendation;
+        diff = modelRes.diff;
+        uncertainties = modelRes.uncertainties || [];
+        if (modelRes.requiredChecks?.length) {
+          requiredChecks = modelRes.requiredChecks;
+        }
+      } catch (err: any) {
+        // Malformed/unsupported output is rejected directly per criterion 26
+        if (err.code === 'INVALID_MODEL_OUTPUT' || err.statusCode === 422) {
+          throw err;
+        }
+        // Timeout or network/credential error: record timeout and fall back for supported rename
+        if (isUserFieldRename) {
+          source = 'deterministic_fallback';
+          uncertainties.push(`live_model_fallback_${err.code || 'error'}: ${err.message}`);
+        } else {
+          throw err;
+        }
+      }
+    }
 
     const patchPayload = {
       provider: 'users',
@@ -787,13 +839,6 @@ export class IncidentService {
     };
     const patchHash = createHash('sha256').update(JSON.stringify(patchPayload)).digest('hex');
     const patchId = `patch_${patchHash.slice(0, 12)}`;
-
-    const diff = `--- CanonicalUserAdapter.v1
-+++ CanonicalUserAdapter.v2 (proposed)
-@@ -1,3 +1,3 @@
- id: raw.id
--displayName: raw.name
-+displayName: raw.display_name ?? raw.name`;
 
     const patch: AdapterPatch = {
       id: patchId,
@@ -812,17 +857,13 @@ export class IncidentService {
     const proposal: RepairProposal = {
       id: proposalId,
       incidentId,
-      source: 'deterministic_fallback',
+      source,
       patch,
-      recommendation: 'recommended',
-      confidence: 0.95,
+      recommendation,
+      confidence,
       evidenceRefs: [incident.id, ...incident.findings.map(f => f.id)],
-      uncertainties: [],
-      requiredChecks: [
-        'shadow_validation_v1',
-        'workflow_replay_welcome_email',
-        'workflow_replay_customer_profile'
-      ],
+      uncertainties,
+      requiredChecks,
       createdAt: new Date().toISOString(),
       auditEventId
     };
@@ -1448,7 +1489,7 @@ export class IncidentService {
 
       // Stage 2: Proposal Synthesis (FR-REC-02)
       transitionStage('proposing', 'Synthesizing compatible adapter via deterministic fallback');
-      const proposalRes = this.proposeRepair(incidentId, projectId, environment);
+      const proposalRes = await this.proposeRepair(incidentId, projectId, environment);
       const patch = proposalRes.proposal.patch;
       run.artifacts.patchId = patch.id;
       run.artifacts.patchHash = patch.hash;

@@ -682,7 +682,7 @@ export function buildApiApp(options: ApiAppOptions = {}): FastifyInstance {
     const sessionId = body.sessionId || query.sessionId;
     const model = body.model || 'deterministic_fallback';
 
-    const result = incidentService.proposeRepair(incidentId, projectId, environment, sessionId, model);
+    const result = await incidentService.proposeRepair(incidentId, projectId, environment, sessionId, model);
     return reply.status(200).send(result);
   });
 

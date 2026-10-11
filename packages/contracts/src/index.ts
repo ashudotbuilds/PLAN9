@@ -569,7 +569,10 @@ export const RepairProposalSchema = z.object({
 export type RepairProposal = z.infer<typeof RepairProposalSchema>;
 
 export const ProposeRepairRequestSchema = z.object({
-  model: z.enum(['deterministic_fallback', 'custom']).optional()
+  projectId: z.string().optional(),
+  environment: ProjectEnvironmentSchema.optional(),
+  sessionId: z.string().optional(),
+  model: z.enum(['deterministic_fallback', 'custom', 'live_model']).optional()
 });
 export type ProposeRepairRequest = z.infer<typeof ProposeRepairRequestSchema>;
 

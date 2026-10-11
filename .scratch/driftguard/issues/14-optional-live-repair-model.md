@@ -4,7 +4,7 @@
 
 **Blocked by:** [13 - Prove and rehearse the complete three-minute demo](13-golden-demo-release.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
 **Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
 
@@ -20,13 +20,13 @@
 
 ## Acceptance criteria
 
-- [ ] Add one provider-neutral RepairModel implementation only after credentials and schedule permit.
-- [ ] Send minimal redacted evidence; keep credentials server-side.
-- [ ] Label live_model and fallback sources distinctly.
-- [ ] Malformed/unsupported output is rejected; timeout is recorded and only the supported rename scenario can use fallback.
-- [ ] Live proposals undergo the identical FR-REP-07/08 and immutable-hash checks.
+- [x] Add one provider-neutral RepairModel implementation only after credentials and schedule permit.
+- [x] Send minimal redacted evidence; keep credentials server-side.
+- [x] Label live_model and fallback sources distinctly.
+- [x] Malformed/unsupported output is rejected; timeout is recorded and only the supported rename scenario can use fallback.
+- [x] Live proposals undergo the identical FR-REP-07/08 and immutable-hash checks.
 
-- [ ] Preserve scoped source/policy/context and evidence limitations in minimal model input; omit project keys, operator tokens, private auth data, and arbitrary environment values.
+- [x] Preserve scoped source/policy/context and evidence limitations in minimal model input; omit project keys, operator tokens, private auth data, and arbitrary environment values.
 
 ## Test scenarios
 
@@ -50,7 +50,7 @@ Do not start until ticket 13 verifies both the original section 21 recovery test
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.

@@ -91,10 +91,11 @@ export function App() {
   const [impactAnalysis, setImpactAnalysis] = useState<AnalyzeImpactResponse | null>(null);
   const [impactError, setImpactError] = useState<string | null>(null);
 
-  // Ticket 05: Repair Proposal
+  // Ticket 05 & 14: Repair Proposal & Model Selection
   const [proposingRepair, setProposingRepair] = useState(false);
   const [repairProposal, setRepairProposal] = useState<RepairProposal | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
+  const [selectedRepairModel, setSelectedRepairModel] = useState<'deterministic_fallback' | 'live_model'>('deterministic_fallback');
 
   // Ticket 06: Shadow Validation & Automatic Eligibility (A11)
   const [validatingPatch, setValidatingPatch] = useState(false);
@@ -588,7 +589,8 @@ export function App() {
         incidentId,
         selectedProjectId,
         selectedEnvironment,
-        baseline?.sessionId
+        baseline?.sessionId,
+        selectedRepairModel
       );
       setRepairProposal(res.proposal);
       setSelectedIncident((prev) => {
@@ -596,7 +598,7 @@ export function App() {
         const proposals = prev.proposals ? [...prev.proposals, res.proposal] : [res.proposal];
         return { ...prev, proposals };
       });
-      recordAudit(res.auditEventId, 'propose_repair', `Generated candidate patch ${res.proposal.patch.id} (confidence: ${res.proposal.confidence})`);
+      recordAudit(res.auditEventId, 'propose_repair', `Generated candidate patch ${res.proposal.patch.id} (confidence: ${res.proposal.confidence}, source: ${res.proposal.source})`);
     } catch (err: any) {
       if (err.message === 'UNAUTHENTICATED') {
         setIsAuthenticated(false);
@@ -2212,22 +2214,33 @@ pnpm --filter @driftguard/sample-consumer start`}
 
                   {/* Ticket 05: Constrained Compatible Adapter Proposal (A10) */}
                   <div className="pt-3 border-t border-[#21262d] space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <h5 className="text-xs font-semibold text-[#f0f6fc]">
                           Constrained Compatible Adapter Proposal (A10)
                         </h5>
                         <p className="text-[11px] text-[#8b949e]">
-                          Deterministic RepairModel: rename/coalesce adapter synthesis with invariant guarantees
+                          Synthesis engine: deterministic rename/coalesce fallback or optional live model
                         </p>
                       </div>
-                      <button
-                        onClick={() => handleProposeRepair(selectedIncident.id)}
-                        disabled={proposingRepair}
-                        className="px-3 py-1 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white rounded text-xs font-medium transition cursor-pointer"
-                      >
-                        {proposingRepair ? 'Proposing Repair...' : 'Propose Compatible Adapter (A10)'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={selectedRepairModel}
+                          onChange={(e) => setSelectedRepairModel(e.target.value as any)}
+                          className="bg-[#0d1117] border border-[#30363d] text-[#c9d1d9] text-[11px] rounded px-2 py-1 outline-none font-mono"
+                          aria-label="Repair model selection"
+                        >
+                          <option value="deterministic_fallback">Deterministic Fallback</option>
+                          <option value="live_model">Live Model (Optional)</option>
+                        </select>
+                        <button
+                          onClick={() => handleProposeRepair(selectedIncident.id)}
+                          disabled={proposingRepair}
+                          className="px-3 py-1 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white rounded text-xs font-medium transition cursor-pointer"
+                        >
+                          {proposingRepair ? 'Proposing Repair...' : 'Propose Compatible Adapter (A10)'}
+                        </button>
+                      </div>
                     </div>
 
                     {proposalError && (
@@ -2247,9 +2260,15 @@ pnpm --filter @driftguard/sample-consumer start`}
                             <span className="text-[#f0f6fc] font-semibold text-[11px]">
                               {`Confidence: ${Math.round(((repairProposal || selectedIncident.proposals?.[0])?.confidence || 0) * 100)}%`}
                             </span>
-                            <span className="text-[#8b949e] text-[10px]">
-                              {`Source: ${(repairProposal || selectedIncident.proposals?.[0])?.source}`}
-                            </span>
+                            {((repairProposal || selectedIncident.proposals?.[0])?.source === 'model_proposal') ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#8957e5]/20 text-[#a371f7] border border-[#8957e5]/40">
+                                LIVE MODEL PROPOSAL
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40">
+                                DETERMINISTIC FALLBACK
+                              </span>
+                            )}
                           </div>
                           <span className="text-[10px] text-[#8b949e]">
                             {`Proposal ID: ${(repairProposal || selectedIncident.proposals?.[0])?.id}`}
