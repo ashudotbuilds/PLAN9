@@ -530,6 +530,33 @@ export class DriftGuard {
     };
   }
 
+  /**
+   * Resets active session state, queued events, and cached dependency registrations.
+   * Used after demo reset or when re-registering dependencies with fresh session credentials.
+   */
+  resetSession(): void {
+    this.registrations.clear();
+    this.activeSessionId = undefined;
+    this.queue = [];
+    this.currentQueueBytes = 0;
+    this.lastError = undefined;
+
+    // Restore enabled status if base config is valid
+    try {
+      const url = new URL(this.config.endpoint);
+      const isLoopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
+      if (
+        this.config.apiKey &&
+        this.config.projectId &&
+        ((url.protocol === 'http:' && this.config.allowInsecureLoopback && isLoopback) || url.protocol === 'https:')
+      ) {
+        this.enabled = true;
+      }
+    } catch {
+      // Keep existing enabled state
+    }
+  }
+
   async shutdown(): Promise<ShutdownResult> {
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
