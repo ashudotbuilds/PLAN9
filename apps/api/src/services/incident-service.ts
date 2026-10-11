@@ -25,6 +25,7 @@ import {
   RecoveryRunArtifacts
 } from '@driftguard/contracts';
 import { randomUUID, createHash } from 'node:crypto';
+import { detectPaginationProtocolDrift } from '@driftguard/observer';
 import { BaselineService } from './baseline-service.js';
 import { RepairModel, LiveRepairModel } from './repair-model.js';
 
@@ -70,7 +71,11 @@ export class IncidentService {
     this.baselineService.acquireLease(projectId, environment, sessionId);
 
     // 2. Validate known scenario
-    const supportedScenarios = ['users.field-rename', 'shipping.business-days'];
+    const supportedScenarios = [
+      'users.field-rename',
+      'shipping.business-days',
+      'inventory.cursor-pagination'
+    ];
     if (!supportedScenarios.includes(scenarioId)) {
       const err = new Error(`Scenario '${scenarioId}' is not recognized.`);
       (err as any).statusCode = 404;
@@ -144,6 +149,7 @@ export class IncidentService {
     }
 
     const observationIds = userIds.map(() => `obs_${randomUUID().slice(0, 8)}`);
+    const now = new Date().toISOString();
     const findings: Finding[] = [];
     const affectedWorkflows: WorkflowId[] = [];
     const failedWorkflows: { workflowId: WorkflowId; reason: string }[] = [];
@@ -435,12 +441,171 @@ export class IncidentService {
       }
     }
 
+    // 5. Observe Inventory API over HTTP (M02 cursor pagination canary)
+    let observedInventory: any = null;
+    let followInventory: any = null;
+    try {
+      const invRes = await this.fetchFn(`${this.mockProvidersBaseUrl}/inventory/items`);
+      if (invRes.ok) {
+        observedInventory = await invRes.json();
+        if (observedInventory && observedInventory.next_cursor) {
+          const followRes = await this.fetchFn(
+            `${this.mockProvidersBaseUrl}/inventory/items?cursor=${observedInventory.next_cursor}`
+          );
+          if (followRes.ok) {
+            followInventory = await followRes.json();
+          }
+        }
+      }
+    } catch {
+      // Graceful fallback if inventory mock unavailable
+    }
+
+    const baselineInventory = baseline.rawEvidence?.inventory as any;
+    let inventoryIncidentSummary: IncidentSummary | null = null;
+
+    const paginationDrift = detectPaginationProtocolDrift(
+      baselineInventory,
+      observedInventory,
+      followInventory
+    );
+
+    if (paginationDrift.hasDrift) {
+      observationIds.push(`obs_${randomUUID().slice(0, 8)}`);
+      if (followInventory) {
+        observationIds.push(`obs_${randomUUID().slice(0, 8)}`);
+      }
+
+      const paginationFinding: Finding = {
+        id: `find_${randomUUID().slice(0, 8)}`,
+        type: 'pagination_protocol_drift',
+        provider: 'inventory',
+        endpoint: '/inventory/items',
+        fieldName: 'pagination',
+        path: '$.next_cursor',
+        evidenceStrength: paginationDrift.evidenceStrength,
+        beforeValue: baselineInventory
+          ? {
+              type: 'page_offset',
+              page: baselineInventory.page ?? 1,
+              limit: baselineInventory.limit ?? 10,
+              total: baselineInventory.total ?? 3
+            }
+          : { type: 'page_offset', page: 1, limit: 10, total: 3 },
+        afterValue: {
+          type: 'cursor',
+          next_cursor: observedInventory.next_cursor,
+          has_more: observedInventory.has_more,
+          followPageTerminated: followInventory ? followInventory.next_cursor === null : false
+        },
+        description: paginationDrift.description
+      };
+
+      findings.push(paginationFinding);
+
+      const inventoryFingerprint = createHash('sha256')
+        .update(
+          JSON.stringify({
+            projectId,
+            environment,
+            provider: 'inventory',
+            endpoint: '/inventory/items',
+            findings: [{ type: paginationFinding.type, field: paginationFinding.fieldName }]
+          })
+        )
+        .digest('hex');
+
+      let existingInvIncident: IncidentDetail | undefined;
+      for (const inc of this.incidents.values()) {
+        if (
+          inc.projectId === projectId &&
+          inc.environment === environment &&
+          inc.fingerprint === inventoryFingerprint
+        ) {
+          existingInvIncident = inc;
+          break;
+        }
+      }
+
+      const invBeforeEvidence: Record<string, unknown> = {
+        inventory: baselineInventory
+      };
+      const invAfterEvidence: Record<string, unknown> = {
+        inventory: observedInventory,
+        followPage: followInventory
+      };
+
+      if (existingInvIncident) {
+        existingInvIncident.detectedAt = now;
+        existingInvIncident.findings = [paginationFinding];
+        existingInvIncident.afterEvidence = invAfterEvidence;
+        inventoryIncidentSummary = {
+          id: existingInvIncident.id,
+          projectId: existingInvIncident.projectId,
+          environment: existingInvIncident.environment,
+          sessionId: existingInvIncident.sessionId,
+          provider: existingInvIncident.provider,
+          endpoint: existingInvIncident.endpoint,
+          fingerprint: existingInvIncident.fingerprint,
+          status: existingInvIncident.status,
+          severity: existingInvIncident.severity,
+          summary: existingInvIncident.summary,
+          detectedAt: existingInvIncident.detectedAt,
+          evidenceStrength: existingInvIncident.evidenceStrength,
+          affectedWorkflows: existingInvIncident.affectedWorkflows
+        };
+      } else {
+        const invIncidentId = `inc_${randomUUID().slice(0, 8)}`;
+        const detail: IncidentDetail = {
+          id: invIncidentId,
+          projectId,
+          environment,
+          sessionId,
+          provider: 'inventory',
+          endpoint: '/inventory/items',
+          fingerprint: inventoryFingerprint,
+          status: 'review_required',
+          severity: 'high',
+          summary: "Protocol drift: inventory pagination switched from page-number to cursor-based responses",
+          detectedAt: now,
+          evidenceStrength: paginationDrift.evidenceStrength,
+          affectedWorkflows: ['inventory_sync'],
+          findings: [paginationFinding],
+          beforeEvidence: invBeforeEvidence,
+          afterEvidence: invAfterEvidence,
+          failedWorkflows: [
+            {
+              workflowId: 'inventory_sync',
+              reason: "Invariant 'deep_equal_to_baseline' broken: page-offset client unable to paginate cursor-based inventory items."
+            }
+          ],
+          auditEventId
+        };
+        this.incidents.set(invIncidentId, detail);
+        inventoryIncidentSummary = {
+          id: detail.id,
+          projectId: detail.projectId,
+          environment: detail.environment,
+          sessionId: detail.sessionId,
+          provider: detail.provider,
+          endpoint: detail.endpoint,
+          fingerprint: detail.fingerprint,
+          status: detail.status,
+          severity: detail.severity,
+          summary: detail.summary,
+          detectedAt: detail.detectedAt,
+          evidenceStrength: detail.evidenceStrength,
+          affectedWorkflows: detail.affectedWorkflows
+        };
+      }
+    }
+
     const allIncidents = this.listIncidents(projectId, environment);
 
     return {
       observationIds,
       findings,
-      incident: shippingIncidentSummary || incidentSummary,
+      incident: inventoryIncidentSummary || shippingIncidentSummary || incidentSummary,
       incidents: allIncidents,
       auditEventId
     };
@@ -634,6 +799,41 @@ export class IncidentService {
             evidenceRefs: [incident.id]
           });
         }
+      } else if (incident.provider === 'inventory') {
+        const invEdge = edges.find(
+          e => e.canonicalField === 'inventory.items' || e.workflowId === 'inventory_sync'
+        );
+        if (wf === 'inventory_sync' && invEdge) {
+          affectedWorkflows.push({
+            workflowId: 'inventory_sync',
+            status: 'affected',
+            reason: `Runtime read edge confirmed consumption of canonical field '${invEdge.canonicalField}'. Pagination protocol drift breaks batch synchronization.`,
+            canonicalField: 'items',
+            providerField: 'items',
+            changedBehavior: 'Inventory provider changed response pagination protocol from page/limit offset to cursor-based token navigation.',
+            invariant: invEdge.invariant,
+            provenance: 'runtime_read',
+            evidenceRefs: [incident.id, incident.findings[0]?.id || 'find_inv']
+          });
+
+          tracePaths.push({
+            provider: 'inventory',
+            endpoint: '/inventory/items',
+            declaredClient: 'inventory-client-sdk',
+            canonicalAdapter: 'InventorySyncAdapter',
+            workflow: 'inventory_sync',
+            provenance: 'runtime_read',
+            evidenceRefs: [incident.id]
+          });
+        } else {
+          unaffectedWorkflows.push({
+            workflowId: wf,
+            status: 'unaffected',
+            reason: `Workflow executes without consuming provider 'inventory'. Excluded from inventory pagination blast radius.`,
+            provenance: 'runtime_read',
+            evidenceRefs: [incident.id]
+          });
+        }
       } else {
         unaffectedWorkflows.push({
           workflowId: wf,
@@ -701,7 +901,11 @@ export class IncidentService {
       incident.provider === 'shipping' &&
       incident.findings.some(f => f.type === 'semantic_behavior_drift');
 
-    if (!isUserFieldRename && !isShippingSemanticDrift) {
+    const isInventoryPaginationDrift =
+      incident.provider === 'inventory' &&
+      incident.findings.some(f => f.type === 'pagination_protocol_drift');
+
+    if (!isUserFieldRename && !isShippingSemanticDrift && !isInventoryPaginationDrift) {
       const err = new Error('No supported deterministic repair pattern for this incident drift.');
       (err as any).statusCode = 422;
       (err as any).code = 'UNSUPPORTED_DRIFT';
@@ -756,6 +960,72 @@ export class IncidentService {
         requiredChecks: [
           'human_operator_review',
           'business_policy_approval'
+        ],
+        createdAt: new Date().toISOString(),
+        auditEventId
+      };
+
+      incident.status = 'review_required';
+      if (!incident.proposals) {
+        incident.proposals = [];
+      }
+      const existing = incident.proposals.find(p => p.patch.hash === patchHash);
+      if (!existing) {
+        incident.proposals.push(proposal);
+      }
+
+      return { proposal, auditEventId };
+    }
+
+    if (isInventoryPaginationDrift) {
+      const rules: AdapterRule[] = [];
+      const preservedFields = ['items'];
+
+      const patchPayload = {
+        provider: 'inventory',
+        targetEntity: 'CanonicalInventory',
+        rules,
+        preservedFields
+      };
+      const patchHash = createHash('sha256').update(JSON.stringify(patchPayload)).digest('hex');
+      const patchId = `patch_${patchHash.slice(0, 12)}`;
+
+      const diff = `--- CanonicalInventoryAdapter.v1
++++ CanonicalInventoryAdapter.v2 (held for review)
+@@ -1,1 +1,1 @@
+-pagination: page_offset(page, limit)
++pagination: cursor(next_cursor) [REQUEST PROTOCOL CHANGE - P0 DSL CANNOT AUTO-ADAPT - OPERATOR REVIEW REQUIRED]`;
+
+      const patch: AdapterPatch = {
+        id: patchId,
+        hash: patchHash,
+        provider: 'inventory',
+        targetEntity: 'CanonicalInventory',
+        version: 2,
+        rules,
+        preservedFields,
+        diff
+      };
+
+      const proposalId = `prop_${randomUUID().slice(0, 8)}`;
+      const auditEventId = `aud_${randomUUID().slice(0, 8)}`;
+
+      const proposal: RepairProposal = {
+        id: proposalId,
+        incidentId,
+        source: 'deterministic_fallback',
+        patch,
+        recommendation: 'review_required',
+        confidence: 0.1,
+        evidenceRefs: [incident.id, ...incident.findings.map(f => f.id)],
+        uncertainties: [
+          'pagination_protocol_change',
+          'request_level_pagination_dsl_unsupported',
+          'requires_bounded_pagination_strategy'
+        ],
+        requiredChecks: [
+          'human_operator_review',
+          'custom_pagination_strategy_approval'
         ],
         createdAt: new Date().toISOString(),
         auditEventId
@@ -915,7 +1185,7 @@ export class IncidentService {
     const gates: ValidationGateResult[] = [];
 
     // Gate 1: read_only_endpoint (FR-REP-07)
-    const isReadOnly = targetIncident.endpoint.startsWith('/api/v1/users') || targetIncident.endpoint.includes('/users') || targetIncident.endpoint.includes('/shipping');
+    const isReadOnly = targetIncident.endpoint.startsWith('/api/v1/users') || targetIncident.endpoint.includes('/users') || targetIncident.endpoint.includes('/shipping') || targetIncident.endpoint.includes('/inventory');
     gates.push({
       gateId: 'read_only_endpoint',
       status: isReadOnly ? 'passed' : 'failed',
@@ -926,6 +1196,7 @@ export class IncidentService {
 
     // Gate 2: structural_drift_only (FR-REP-07)
     const isStructural = !targetIncident.summary.toLowerCase().includes('semantic') &&
+      !targetIncident.summary.toLowerCase().includes('protocol') &&
       targetIncident.findings.every(f => f.type === 'field_removed' || f.type === 'field_added' || f.type === 'field_type_changed');
     gates.push({
       gateId: 'structural_drift_only',
@@ -950,8 +1221,11 @@ export class IncidentService {
 
     // Gate 4: value_equivalence_identities (FR-REP-07, FR-VAL-02)
     const isShipping = targetIncident.provider === 'shipping';
+    const isInventory = targetIncident.provider === 'inventory';
     let equivalencePassed = true;
     if (isShipping) {
+      equivalencePassed = false;
+    } else if (isInventory) {
       equivalencePassed = false;
     } else {
       // Simulate candidate adapter across known identities: u-123 (Aarav), u-456 (Meera), u-789 (Kabir)
@@ -978,6 +1252,8 @@ export class IncidentService {
         ? 'Value equivalence verified across 3 identities (u-123, u-456, u-789) for both legacy and renamed responses.'
         : isShipping
         ? 'Semantic calculation drift: candidate adapter cannot establish calendar and business-day equivalence.'
+        : isInventory
+        ? 'Protocol drift: candidate adapter cannot express request-level pagination traversal in P0 DSL.'
         : 'Failed identity value equivalence check.'
     });
 
@@ -1000,7 +1276,7 @@ export class IncidentService {
 
     // Gate 7: canonical_schema_and_invariants (FR-REP-07, FR-VAL-03, FR-VAL-04)
     let invariantsPassed = true;
-    if (isShipping) {
+    if (isShipping || isInventory) {
       invariantsPassed = false;
     } else {
       const testCases = [
@@ -1022,6 +1298,8 @@ export class IncidentService {
         ? 'Canonical schema and workflow invariants pass for welcome_email and customer_profile.'
         : isShipping
         ? 'Canonical workflow invariant failed: deep_equal_to_baseline violated for delivery_estimate.'
+        : isInventory
+        ? 'Canonical workflow invariant failed: deep_equal_to_baseline violated for inventory_sync under cursor pagination.'
         : 'Canonical schema or workflow invariants failed.'
     });
 
@@ -1050,11 +1328,40 @@ export class IncidentService {
       status: 'passed',
       details: isShipping
         ? 'Unaffected workflows (welcome_email, customer_profile, inventory_sync) confirmed regression-free.'
+        : isInventory
+        ? 'Unaffected workflows (welcome_email, customer_profile, delivery_estimate) confirmed regression-free.'
         : 'Unaffected workflows (inventory_sync, delivery_estimate) confirmed regression-free.'
     });
 
     // Workflow outcomes (FR-VAL-03, FR-VAL-07)
-    const workflowOutcomes: ValidationWorkflowOutcome[] = isShipping
+    const workflowOutcomes: ValidationWorkflowOutcome[] = isInventory
+      ? [
+          {
+            workflowId: 'inventory_sync',
+            status: 'failed',
+            details: 'Invariant deep_equal_to_baseline failed: page-offset client cannot paginate cursor-based inventory items',
+            sideEffectStubbed: false
+          },
+          {
+            workflowId: 'welcome_email',
+            status: 'unchanged',
+            details: 'Unaffected workflow verified regression-free',
+            sideEffectStubbed: true
+          },
+          {
+            workflowId: 'customer_profile',
+            status: 'unchanged',
+            details: 'Unaffected workflow verified regression-free',
+            sideEffectStubbed: false
+          },
+          {
+            workflowId: 'delivery_estimate',
+            status: 'unchanged',
+            details: 'Unaffected workflow verified regression-free',
+            sideEffectStubbed: false
+          }
+        ]
+      : isShipping
       ? [
           {
             workflowId: 'delivery_estimate',

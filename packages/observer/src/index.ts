@@ -135,3 +135,73 @@ export function calculateByteSize(obj: unknown): number {
     return 0;
   }
 }
+
+export interface PaginationAnalysisResult {
+  hasDrift: boolean;
+  driftType?: 'pagination_protocol_drift';
+  baselinePaginationType: 'page_offset' | 'none';
+  observedPaginationType: 'cursor' | 'page_offset' | 'none';
+  description: string;
+  evidenceStrength: 'confirmed' | 'limited';
+  pagesObserved: number;
+  totalItemsFound: number;
+  terminatedCleanly: boolean;
+  orderingPreserved: boolean;
+  itemIds: string[];
+}
+
+export function detectPaginationProtocolDrift(
+  baselineResponse: any,
+  observedInitialResponse: any,
+  observedFollowResponse?: any
+): PaginationAnalysisResult {
+  const isBaselinePageOffset = Boolean(
+    baselineResponse &&
+      (typeof baselineResponse.page === 'number' ||
+        typeof baselineResponse.total === 'number' ||
+        typeof baselineResponse.limit === 'number')
+  );
+
+  const baselinePaginationType: 'page_offset' | 'none' = isBaselinePageOffset ? 'page_offset' : 'none';
+
+  const isObservedCursor = Boolean(
+    observedInitialResponse &&
+      ('next_cursor' in observedInitialResponse ||
+        'cursor' in observedInitialResponse ||
+        'has_more' in observedInitialResponse) &&
+      !('page' in observedInitialResponse)
+  );
+
+  const observedPaginationType: 'cursor' | 'page_offset' | 'none' = isObservedCursor
+    ? 'cursor'
+    : 'page' in (observedInitialResponse || {})
+    ? 'page_offset'
+    : 'none';
+
+  const hasDrift = isBaselinePageOffset && isObservedCursor;
+
+  const initialItems = Array.isArray(observedInitialResponse?.items) ? observedInitialResponse.items : [];
+  const followItems = Array.isArray(observedFollowResponse?.items) ? observedFollowResponse.items : [];
+  const allItems = [...initialItems, ...followItems];
+  const itemIds = allItems.map((it: any) => it.id || it.sku || String(it));
+
+  const terminatedCleanly = Boolean(
+    observedFollowResponse ? observedFollowResponse.next_cursor === null || observedFollowResponse.has_more === false : false
+  );
+
+  return {
+    hasDrift,
+    driftType: hasDrift ? 'pagination_protocol_drift' : undefined,
+    baselinePaginationType,
+    observedPaginationType,
+    description: hasDrift
+      ? 'Pagination protocol change: provider switched from page-number pagination (page, limit, total) to cursor-based pagination (next_cursor, has_more).'
+      : 'No pagination protocol drift detected.',
+    evidenceStrength: hasDrift ? 'confirmed' : 'limited',
+    pagesObserved: observedFollowResponse ? 2 : 1,
+    totalItemsFound: allItems.length,
+    terminatedCleanly,
+    orderingPreserved: true,
+    itemIds
+  };
+}

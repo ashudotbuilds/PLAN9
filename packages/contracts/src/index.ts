@@ -328,7 +328,8 @@ export const FindingTypeSchema = z.enum([
   'field_removed',
   'field_added',
   'field_type_changed',
-  'semantic_behavior_drift'
+  'semantic_behavior_drift',
+  'pagination_protocol_drift'
 ]);
 export type FindingType = z.infer<typeof FindingTypeSchema>;
 

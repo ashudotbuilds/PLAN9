@@ -202,8 +202,16 @@ export class ProjectService {
           name: 'Users API',
           status: activeScenarios?.includes('users.field-rename') ? 'drift_detected' : 'ready'
         },
-        { id: 'inventory', name: 'Inventory API', status: 'ready' },
-        { id: 'shipping', name: 'Shipping API', status: 'ready' }
+        {
+          id: 'inventory',
+          name: 'Inventory API',
+          status: activeScenarios?.includes('inventory.cursor-pagination') ? 'drift_detected' : 'ready'
+        },
+        {
+          id: 'shipping',
+          name: 'Shipping API',
+          status: activeScenarios?.includes('shipping.business-days') ? 'drift_detected' : 'ready'
+        }
       ],
       baseline: baseline || undefined,
       readEdges: readEdges || undefined,

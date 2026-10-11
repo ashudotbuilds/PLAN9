@@ -3359,6 +3359,212 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       expect(actRes.json().recoveryStatus).toBe('recovered');
     });
   });
+
+  describe('Ticket 15: Pagination Drift Detection (FR-SIM-05, FR-OBS-06, FR-DET-06, FR-MON-01, FR-LIN-01)', () => {
+    let baselineService: any;
+    let incidentService: any;
+    let mockFetch: any;
+    let activeScenarios: string[];
+
+    beforeEach(async () => {
+      activeScenarios = [];
+      mockFetch = vi.fn(async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.includes('/scenarios/') && u.includes('/inject')) {
+          const sc = u.split('/scenarios/')[1]?.split('/inject')[0];
+          if (sc) activeScenarios.push(sc);
+          return { ok: true, json: async () => ({ ok: true, activeScenarios }) };
+        }
+        if (u.includes('/scenarios/reset') || u.includes('/__control/reset')) {
+          activeScenarios = [];
+          return { ok: true, json: async () => ({ ok: true, activeScenarios: [] }) };
+        }
+        if (u.includes('/users/')) {
+          const id = u.split('/users/')[1]?.split('?')[0] || 'u-123';
+          const nameMap: Record<string, string> = { 'u-123': 'Aarav', 'u-456': 'Meera', 'u-789': 'Kabir' };
+          const name = nameMap[id] || 'Aarav';
+          return {
+            ok: true,
+            json: async () => (activeScenarios.includes('users.field-rename') ? { id, display_name: name } : { id, name })
+          };
+        }
+        if (u.includes('/shipping/estimate')) {
+          return { ok: true, json: async () => ({ estimated_delivery_date: '2026-10-12' }) };
+        }
+        if (u.includes('/inventory/items')) {
+          if (activeScenarios.includes('inventory.cursor-pagination')) {
+            if (u.includes('cursor=cur_inv_page_2')) {
+              return {
+                ok: true,
+                json: async () => ({
+                  items: [{ id: 'inv-103', sku: 'SENSOR-C', quantity: 120, in_stock: true }],
+                  next_cursor: null,
+                  has_more: false
+                })
+              };
+            }
+            return {
+              ok: true,
+              json: async () => ({
+                items: [
+                  { id: 'inv-101', sku: 'WIDGET-A', quantity: 45, in_stock: true },
+                  { id: 'inv-102', sku: 'GADGET-B', quantity: 0, in_stock: false }
+                ],
+                next_cursor: 'cur_inv_page_2',
+                has_more: true
+              })
+            };
+          }
+          return {
+            ok: true,
+            json: async () => ({
+              items: [
+                { id: 'inv-101', sku: 'WIDGET-A', quantity: 45, in_stock: true },
+                { id: 'inv-102', sku: 'GADGET-B', quantity: 0, in_stock: false },
+                { id: 'inv-103', sku: 'SENSOR-C', quantity: 120, in_stock: true }
+              ],
+              total: 3,
+              page: 1,
+              limit: 10
+            })
+          };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const { BaselineService } = await import('../src/services/baseline-service.js');
+      const { IncidentService } = await import('../src/services/incident-service.js');
+      baselineService = new BaselineService({ fetchFn: mockFetch as any });
+      await baselineService.captureBaseline('prj_demo_default', 'development', 'sess_1');
+      incidentService = new IncidentService(baselineService, { fetchFn: mockFetch as any });
+    });
+
+    it('injects scenario inventory.cursor-pagination via HTTP controls (A05, M04)', async () => {
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+      const res = await testApp.inject({
+        method: 'POST',
+        url: '/api/scenarios/inventory.cursor-pagination/inject',
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'prj_demo_default',
+          environment: 'development',
+          sessionId: 'sess_1'
+        }
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().scenarioId).toBe('inventory.cursor-pagination');
+      expect(res.json().activeScenarios).toContain('inventory.cursor-pagination');
+    });
+
+    it('observes pagination drift and classifies finding as pagination_protocol_drift (A06, A07)', async () => {
+      await incidentService.injectScenario('inventory.cursor-pagination', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+
+      expect(obsRes.findings.length).toBeGreaterThan(0);
+      const paginationFinding = obsRes.findings.find((f: any) => f.type === 'pagination_protocol_drift');
+      expect(paginationFinding).toBeDefined();
+      expect(paginationFinding.provider).toBe('inventory');
+      expect(paginationFinding.endpoint).toBe('/inventory/items');
+      expect(paginationFinding.evidenceStrength).toBe('confirmed');
+      expect(paginationFinding.beforeValue.type).toBe('page_offset');
+      expect(paginationFinding.afterValue.type).toBe('cursor');
+      expect(paginationFinding.afterValue.followPageTerminated).toBe(true);
+
+      const incident = obsRes.incident!;
+      expect(incident.provider).toBe('inventory');
+      expect(incident.endpoint).toBe('/inventory/items');
+      expect(incident.status).toBe('review_required');
+      expect(incident.affectedWorkflows).toEqual(['inventory_sync']);
+    });
+
+    it('traces only inventory_sync in causal impact analysis with zero user/shipping false positives (A09)', async () => {
+      await incidentService.injectScenario('inventory.cursor-pagination', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+      const impactRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/analyze-impact`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'prj_demo_default',
+          environment: 'development'
+        }
+      });
+
+      expect(impactRes.statusCode).toBe(200);
+      const impact = impactRes.json();
+      const affectedIds = impact.affectedWorkflows.map((w: any) => w.workflowId);
+      const unaffectedIds = impact.unaffectedWorkflows.map((w: any) => w.workflowId);
+
+      expect(affectedIds).toContain('inventory_sync');
+      expect(affectedIds).not.toContain('welcome_email');
+      expect(affectedIds).not.toContain('customer_profile');
+      expect(affectedIds).not.toContain('delivery_estimate');
+
+      expect(unaffectedIds).toContain('welcome_email');
+      expect(unaffectedIds).toContain('customer_profile');
+      expect(unaffectedIds).toContain('delivery_estimate');
+    });
+
+    it('holds repair proposal for review because P0 DSL cannot auto-adapt request pagination (A10, A11)', async () => {
+      await incidentService.injectScenario('inventory.cursor-pagination', 'prj_demo_default', 'development', 'sess_1');
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      const incidentId = obsRes.incident!.id;
+
+      const testApp = buildApiApp({ operatorToken: testToken, baselineService, incidentService });
+
+      // Propose repair (held for review)
+      const propRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/incidents/${incidentId}/propose-repair`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          projectId: 'prj_demo_default',
+          environment: 'development'
+        }
+      });
+
+      expect(propRes.statusCode).toBe(200);
+      const proposal = propRes.json().proposal;
+      expect(proposal.recommendation).toBe('review_required');
+      expect(proposal.confidence).toBeLessThanOrEqual(0.1);
+      expect(proposal.uncertainties).toContain('pagination_protocol_change');
+      expect(proposal.patch.diff).toContain('P0 DSL CANNOT AUTO-ADAPT');
+
+      // Validate patch evaluates to ineligible
+      const valRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${proposal.patch.id}/validate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: {
+          patchHash: proposal.patch.hash
+        }
+      });
+
+      expect(valRes.statusCode).toBe(200);
+      const run = valRes.json().validationRun;
+      expect(run.eligibility).toBe('review_required');
+      expect(run.status).toBe('failed');
+
+      const invOutcome = run.workflowOutcomes.find((w: any) => w.workflowId === 'inventory_sync');
+      expect(invOutcome.status).toBe('failed');
+      const emailOutcome = run.workflowOutcomes.find((w: any) => w.workflowId === 'welcome_email');
+      expect(emailOutcome.status).toBe('unchanged');
+
+      // Activation is refused for ineligible/review_required patch
+      const actRes = await testApp.inject({
+        method: 'POST',
+        url: `/api/patches/${proposal.patch.id}/activate`,
+        headers: { [OPERATOR_TOKEN_HEADER]: testToken },
+        payload: { patchHash: proposal.patch.hash }
+      });
+      expect(actRes.statusCode).toBe(409);
+      expect(actRes.json().error.code).toBe('PATCH_NOT_ELIGIBLE');
+    });
+  });
 });
 
 

@@ -91,7 +91,35 @@ export function buildMockProvidersApp(options: MockProvidersOptions = {}): Fasti
     { id: 'inv-103', sku: 'SENSOR-C', quantity: 120, in_stock: true }
   ];
 
-  app.get('/inventory/items', async () => {
+  app.get('/inventory/items', async (request) => {
+    if (activeScenarios.has('inventory.cursor-pagination')) {
+      const query = (request.query as any) || {};
+      const cursor = query.cursor;
+
+      if (!cursor) {
+        // First page: return first 2 items with next_cursor
+        return {
+          items: mockInventory.slice(0, 2),
+          next_cursor: 'cur_inv_page_2',
+          has_more: true
+        };
+      } else if (cursor === 'cur_inv_page_2') {
+        // Second page: return remaining 1 item with null next_cursor
+        return {
+          items: mockInventory.slice(2),
+          next_cursor: null,
+          has_more: false
+        };
+      } else {
+        // Exhausted / unknown cursor
+        return {
+          items: [],
+          next_cursor: null,
+          has_more: false
+        };
+      }
+    }
+
     return {
       items: mockInventory,
       total: mockInventory.length,

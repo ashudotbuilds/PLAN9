@@ -1229,7 +1229,14 @@ pnpm --filter @driftguard/sample-consumer start`}
               </thead>
               <tbody className="divide-y divide-[#21262d]">
                 {providers.map((p) => {
-                  const hasScenario = p.id === 'users' && activeScenarios.includes('users.field-rename');
+                  const scenarioName =
+                    p.id === 'users' && activeScenarios.includes('users.field-rename')
+                      ? 'users.field-rename'
+                      : p.id === 'shipping' && activeScenarios.includes('shipping.business-days')
+                      ? 'shipping.business-days'
+                      : p.id === 'inventory' && activeScenarios.includes('inventory.cursor-pagination')
+                      ? 'inventory.cursor-pagination'
+                      : null;
                   return (
                     <tr key={p.id} className="hover:bg-[#21262d]/50 transition-colors">
                       <td className="py-2 px-3 text-[#f0f6fc] font-semibold">
@@ -1242,9 +1249,9 @@ pnpm --filter @driftguard/sample-consumer start`}
                         </span>
                       </td>
                       <td className="py-2 px-3">
-                        {hasScenario ? (
+                        {scenarioName ? (
                           <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#d29922]/20 text-[#e3b341] border border-[#d29922]/40">
-                            users.field-rename
+                            {scenarioName}
                           </span>
                         ) : (
                           <span className="text-[#8b949e]">—</span>
@@ -1892,6 +1899,18 @@ pnpm --filter @driftguard/sample-consumer start`}
                   : activeScenarios.includes('shipping.business-days')
                   ? 'Injected: shipping.business-days'
                   : 'Inject Shipping Business Days'}
+              </button>
+
+              <button
+                onClick={() => handleInjectScenario('inventory.cursor-pagination')}
+                disabled={!baseline || injectingScenario}
+                className="px-3.5 py-1.5 bg-[#d29922]/20 hover:bg-[#d29922]/30 text-[#e3b341] border border-[#d29922]/40 disabled:opacity-50 rounded text-xs font-medium transition cursor-pointer"
+              >
+                {injectingScenario
+                  ? 'Injecting...'
+                  : activeScenarios.includes('inventory.cursor-pagination')
+                  ? 'Injected: inventory.cursor-pagination'
+                  : 'Inject Inventory Cursor'}
               </button>
 
               <button

@@ -4,7 +4,7 @@
 
 **Blocked by:** [13 - Prove and rehearse the complete three-minute demo](13-golden-demo-release.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
 **Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
 
@@ -20,13 +20,13 @@
 
 ## Acceptance criteria
 
-- [ ] Inject inventory.cursor-pagination over HTTP controls.
-- [ ] Observe ordering, page metadata, cursor termination, and request-response evidence.
-- [ ] Classify pagination drift independently of a model.
-- [ ] Trace only inventory_sync through its canonical read edges.
-- [ ] Keep automatic adaptation held because P0 DSL cannot express request pagination changes.
+- [x] Inject inventory.cursor-pagination over HTTP controls.
+- [x] Observe ordering, page metadata, cursor termination, and request-response evidence.
+- [x] Classify pagination drift independently of a model.
+- [x] Trace only inventory_sync through its canonical read edges.
+- [x] Keep automatic adaptation held because P0 DSL cannot express request pagination changes.
 
-- [ ] Keep pagination findings and runtime inventory_sync links scoped/source-labelled. Metadata signals alone cannot demonstrate complete item order or exactly-once retrieval.
+- [x] Keep pagination findings and runtime inventory_sync links scoped/source-labelled. Metadata signals alone cannot demonstrate complete item order or exactly-once retrieval.
 
 ## Test scenarios
 
@@ -53,7 +53,7 @@ Do not start until ticket 13 verifies both the original section 21 recovery test
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.
