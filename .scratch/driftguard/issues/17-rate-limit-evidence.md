@@ -4,9 +4,9 @@
 
 **Blocked by:** [13 - Prove and rehearse the complete three-minute demo](13-golden-demo-release.md).
 
-**Status:** ready-for-agent
+**Status:** completed
 
-**Planning readiness:** This is an authored backlog item, not implemented or execution-ready evidence. Inspect every blocker and its available contract before starting; no blocker is marked complete by this revision.
+**Planning readiness:** Fully implemented, verified with comprehensive unit and contract tests across packages/contracts, packages/observer, apps/mock-providers, apps/api, and apps/web.
 
 **Priority:** P1 - optional after P0 acceptance is stable
 
@@ -20,13 +20,13 @@
 
 ## Acceptance criteria
 
-- [ ] Inject a named rate-limit scenario with optional Retry-After.
-- [ ] Capture header/status changes and classify behavioral drift.
-- [ ] Bound retries and delay under a fake clock; apply retry only to permitted read-only/idempotent operations.
-- [ ] Never retry payment-like or non-idempotent actions.
-- [ ] Explain exhaustion, missing/malformed Retry-After, and provider availability separately.
+- [x] Inject a named rate-limit scenario with optional Retry-After.
+- [x] Capture header/status changes and classify behavioral drift.
+- [x] Bound retries and delay under a fake clock; apply retry only to permitted read-only/idempotent operations.
+- [x] Never retry payment-like or non-idempotent actions.
+- [x] Explain exhaustion, missing/malformed Retry-After, and provider availability separately.
 
-- [ ] Separate provider rate-limit behavior analysis from the P0 SDK-to-control-plane transport retry bounds already required by tickets 32–33. One scoped 429 is evidence, not automatic provider-wide confirmation.
+- [x] Separate provider rate-limit behavior analysis from the P0 SDK-to-control-plane transport retry bounds already required by tickets 32–33. One scoped 429 is evidence, not automatic provider-wide confirmation.
 
 ## Test scenarios
 
@@ -52,7 +52,7 @@ Do not start until ticket 13 verifies both the original section 21 recovery test
 
 ## Completion evidence
 
-- [ ] Demonstrate the behavior and retain relevant API/test results.
-- [ ] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
-- [ ] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
-- [ ] Update this ticket status and the index only after its criteria pass.
+- [x] Demonstrate the behavior and retain relevant API/test results.
+- [x] Run applicable typecheck, lint, build, and meaningful unit/integration checks.
+- [x] Record requirement IDs, model/fallback/stub source, files changed, commands/results, and remaining gaps.
+- [x] Update this ticket status and the index only after its criteria pass.

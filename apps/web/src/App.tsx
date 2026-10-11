@@ -1233,6 +1233,8 @@ pnpm --filter @driftguard/sample-consumer start`}
                   const scenarioName =
                     p.id === 'users' && activeScenarios.includes('users.field-rename')
                       ? 'users.field-rename'
+                      : p.id === 'users' && activeScenarios.includes('users.rate-limit')
+                      ? 'users.rate-limit'
                       : p.id === 'shipping' && activeScenarios.includes('shipping.business-days')
                       ? 'shipping.business-days'
                       : p.id === 'inventory' && activeScenarios.includes('inventory.cursor-pagination')
@@ -1915,6 +1917,18 @@ pnpm --filter @driftguard/sample-consumer start`}
               </button>
 
               <button
+                onClick={() => handleInjectScenario('users.rate-limit')}
+                disabled={!baseline || injectingScenario}
+                className="px-3.5 py-1.5 bg-[#d29922]/20 hover:bg-[#d29922]/30 text-[#e3b341] border border-[#d29922]/40 disabled:opacity-50 rounded text-xs font-medium transition cursor-pointer"
+              >
+                {injectingScenario
+                  ? 'Injecting...'
+                  : activeScenarios.includes('users.rate-limit')
+                  ? 'Injected: users.rate-limit'
+                  : 'Inject Rate Limit (429)'}
+              </button>
+
+              <button
                 onClick={handleRunObservations}
                 disabled={!baseline || observing}
                 className="px-4 py-1.5 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white rounded text-xs font-medium transition cursor-pointer shadow-sm"
@@ -2303,6 +2317,11 @@ pnpm --filter @driftguard/sample-consumer start`}
                                 BOUNDED PAGINATION
                               </span>
                             )}
+                            {(repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#d29922]/20 text-[#e3b341] border border-[#d29922]/40">
+                                BOUNDED RETRY POLICY
+                              </span>
+                            )}
                           </div>
                           <span className="text-[10px] text-[#8b949e]">
                             {`Proposal ID: ${(repairProposal || selectedIncident.proposals?.[0])?.id}`}
@@ -2325,6 +2344,34 @@ pnpm --filter @driftguard/sample-consumer start`}
                               <div>Max Requests: <span className="text-[#f0f6fc]">{(repairProposal || selectedIncident.proposals?.[0])?.patch.strategy?.maxRequests}</span></div>
                               <div>Cursor Param: <span className="text-[#f0f6fc]">{(repairProposal || selectedIncident.proposals?.[0])?.patch.strategy?.cursorParam}</span></div>
                               <div>Unique Key: <span className="text-[#f0f6fc]">{(repairProposal || selectedIncident.proposals?.[0])?.patch.strategy?.uniqueKey}</span></div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Rate Limit Policy Details if present */}
+                        {(repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy && (
+                          <div className="p-2.5 bg-[#0d1117] border border-[#d29922]/40 rounded space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#d29922]/20 text-[#e3b341] border border-[#d29922]/40">
+                                429 BOUNDED RETRY POLICY
+                              </span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                (repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy?.replayRisk === 'safe_idempotent'
+                                  ? 'bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40'
+                                  : 'bg-[#da3633]/20 text-[#f85149] border border-[#da3633]/40'
+                              }`}>
+                                {(repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy?.replayRisk.toUpperCase()}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[11px] text-[#8b949e]">
+                              <div>Max Retries: <span className="text-[#f0f6fc]">{(repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy?.maxRetries}</span></div>
+                              <div>Max Duration: <span className="text-[#f0f6fc]">{(repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy?.maxDurationSeconds}s</span></div>
+                              <div>Retry-After: <span className="text-[#f0f6fc]">{(repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy?.retryAfter.seconds !== null ? `${(repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy?.retryAfter.seconds}s (${(repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy?.retryAfter.format})` : `None (${(repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy?.retryAfter.format})`}</span></div>
+                              <div>Backoff Schedule: <span className="text-[#f0f6fc]">[{((repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy?.backoffScheduleMs || []).join(', ')}]ms</span></div>
+                            </div>
+                            <div className="text-[11px] text-[#8b949e] border-t border-[#21262d] pt-1.5 space-y-1">
+                              <div><span className="font-semibold text-[#f0f6fc]">Explanation:</span> {(repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy?.explanation}</div>
+                              <div><span className="font-semibold text-[#f0f6fc]">Exhaustion:</span> {(repairProposal || selectedIncident.proposals?.[0])?.rateLimitPolicy?.exhaustionExplanation}</div>
                             </div>
                           </div>
                         )}

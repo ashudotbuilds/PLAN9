@@ -7,6 +7,10 @@ import {
   IDEMPOTENCY_KEY_HEADER,
   OPERATOR_SESSION_COOKIE
 } from '@driftguard/contracts';
+import { parseRetryAfter, detectRateLimitDrift } from '@driftguard/observer';
+import { buildMockProvidersApp } from '../../mock-providers/src/app.js';
+import { BaselineService } from '../src/services/baseline-service.js';
+import { IncidentService } from '../src/services/incident-service.js';
 
 describe('Control Plane API - Operator Auth & Projects', () => {
   let app: ReturnType<typeof buildApiApp>;
@@ -3949,6 +3953,274 @@ describe('Control Plane API - Operator Auth & Projects', () => {
       });
       expect(actForeign.statusCode).toBe(404);
       expect(actForeign.json().error.code).toBe('PATCH_NOT_FOUND');
+    });
+  });
+
+  describe('Ticket 17: Detect rate limits and propose safe bounded handling (FR-SIM-06, FR-OBS-06, FR-DET-06, FR-MON-01, NFR-19)', () => {
+    let mockApp: ReturnType<typeof buildMockProvidersApp>;
+    let baselineService: BaselineService;
+    let incidentService: IncidentService;
+
+    beforeEach(async () => {
+      mockApp = buildMockProvidersApp();
+      await mockApp.ready();
+
+      const fetchFn: typeof fetch = async (url, init) => {
+        const urlStr = url.toString();
+        const parsed = new URL(urlStr);
+        const headers: Record<string, string> = {};
+        if (init?.headers) {
+          if (init.headers instanceof Headers) {
+            init.headers.forEach((v, k) => { headers[k] = v; });
+          } else if (Array.isArray(init.headers)) {
+            init.headers.forEach(([k, v]) => { headers[k] = v; });
+          } else {
+            Object.assign(headers, init.headers);
+          }
+        }
+        const res = await mockApp.inject({
+          method: (init?.method as any) || 'GET',
+          url: parsed.pathname + parsed.search,
+          headers,
+          payload: init?.body ? (typeof init.body === 'string' ? init.body : JSON.stringify(init.body)) : undefined
+        });
+
+        return {
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          headers: {
+            get: (name: string) => res.headers[name.toLowerCase()] as string || null
+          },
+          json: async () => res.json(),
+          text: async () => res.body
+        } as any;
+      };
+
+      baselineService = new BaselineService({ fetchFn, mockProvidersBaseUrl: 'http://127.0.0.1:4001' });
+      incidentService = new IncidentService(baselineService, { fetchFn, mockProvidersBaseUrl: 'http://127.0.0.1:4001' });
+
+      await baselineService.captureBaseline('prj_demo_default', 'development', 'sess_1');
+    });
+
+    it('parses Retry-After header across seconds, HTTP date, missing, and malformed formats', () => {
+      const fakeNow = new Date('2026-10-21T07:27:00.000Z');
+
+      // 1. Integer seconds
+      const secResult = parseRetryAfter('5', fakeNow);
+      expect(secResult.format).toBe('seconds');
+      expect(secResult.seconds).toBe(5);
+      expect(secResult.raw).toBe('5');
+
+      // 2. HTTP Date
+      const dateResult = parseRetryAfter('Wed, 21 Oct 2026 07:28:00 GMT', fakeNow);
+      expect(dateResult.format).toBe('http_date');
+      expect(dateResult.seconds).toBe(60); // 60s delta from fakeNow
+      expect(dateResult.raw).toBe('Wed, 21 Oct 2026 07:28:00 GMT');
+
+      // 3. Missing / absent
+      const nullResult = parseRetryAfter(null, fakeNow);
+      expect(nullResult.format).toBe('missing');
+      expect(nullResult.seconds).toBeNull();
+      expect(nullResult.raw).toBeNull();
+
+      const undefinedResult = parseRetryAfter(undefined, fakeNow);
+      expect(undefinedResult.format).toBe('missing');
+      expect(undefinedResult.seconds).toBeNull();
+
+      // 4. Malformed
+      const malformedResult = parseRetryAfter('invalid-seconds-or-date', fakeNow);
+      expect(malformedResult.format).toBe('malformed');
+      expect(malformedResult.seconds).toBeNull();
+      expect(malformedResult.raw).toBe('invalid-seconds-or-date');
+    });
+
+    it('injects named rate-limit scenario and returns 429 with Retry-After header (M04, FR-SIM-06)', async () => {
+      // Inject users.rate-limit scenario
+      const injectRes = await mockApp.inject({
+        method: 'POST',
+        url: '/__control/scenarios/users.rate-limit'
+      });
+      expect(injectRes.statusCode).toBe(200);
+
+      // Verify GET /users/u-123 returns 429 with Retry-After
+      const userRes = await mockApp.inject({
+        method: 'GET',
+        url: '/users/u-123',
+        headers: { 'x-mock-retry-after': '10' }
+      });
+      expect(userRes.statusCode).toBe(429);
+      expect(userRes.headers['retry-after']).toBe('10');
+      const body = userRes.json();
+      expect(body.error.code).toBe('RATE_LIMIT_EXCEEDED');
+      expect(body.error.details.retryAfter).toBe('10');
+    });
+
+    it('distinguishes single 429 response as limited evidence vs 3 corroborated responses as confirmed (FR-MON-01)', async () => {
+      // 1 single 429 response
+      const singleObservation = detectRateLimitDrift([
+        { statusCode: 429, headers: { 'retry-after': '5' }, endpoint: '/users/:id', method: 'GET', isIdempotent: true }
+      ]);
+      expect(singleObservation.hasRateLimitDrift).toBe(true);
+      expect(singleObservation.evidenceStrength).toBe('limited');
+      expect(singleObservation.corroboratedCount).toBe(1);
+
+      // 3 corroborated 429 responses
+      const corroborated = detectRateLimitDrift([
+        { statusCode: 429, headers: { 'retry-after': '5' }, endpoint: '/users/:id', method: 'GET', isIdempotent: true },
+        { statusCode: 429, headers: { 'retry-after': '5' }, endpoint: '/users/:id', method: 'GET', isIdempotent: true },
+        { statusCode: 429, headers: { 'retry-after': '5' }, endpoint: '/users/:id', method: 'GET', isIdempotent: true }
+      ]);
+      expect(corroborated.hasRateLimitDrift).toBe(true);
+      expect(corroborated.evidenceStrength).toBe('confirmed');
+      expect(corroborated.corroboratedCount).toBe(3);
+    });
+
+    it('proposes bounded retry handling for idempotent GET and verifies all 9 safety gates (FR-DET-06, FR-REP-07)', async () => {
+      // Inject users.rate-limit scenario
+      await incidentService.injectScenario('users.rate-limit', 'prj_demo_default', 'development', 'sess_1');
+
+      // Observe: provider returns 429 across 3 fixtures
+      const obsRes = await incidentService.runObservations('prj_demo_default', 'development', 'sess_1');
+      expect(obsRes.incident).toBeDefined();
+      const incidentId = obsRes.incident!.id;
+
+      const incident = incidentService.getIncident(incidentId, 'prj_demo_default', 'development');
+      expect(incident?.findings[0].type).toBe('rate_limit_drift');
+      expect(incident?.evidenceStrength).toBe('confirmed');
+
+      // Propose repair
+      const propRes = await incidentService.proposeRepair(incidentId, 'prj_demo_default', 'development');
+      const proposal = propRes.proposal;
+      expect(proposal.recommendation).toBe('recommended');
+      expect(proposal.rateLimitPolicy).toBeDefined();
+
+      const policy = proposal.rateLimitPolicy!;
+      expect(policy.maxRetries).toBeLessThanOrEqual(3);
+      expect(policy.maxDurationSeconds).toBeLessThanOrEqual(60);
+      expect(policy.replayRisk).toBe('safe_idempotent');
+      expect(policy.status).toBe('bounded_retry_approved');
+      expect(policy.backoffScheduleMs.length).toBe(3);
+      expect(policy.exhaustionExplanation).toContain('retry_exhausted');
+
+      // Shadow validation evaluates all 9 gates
+      const valRes = await incidentService.validatePatch(proposal.patch.id, 'prj_demo_default', 'development', proposal.patch.hash);
+      expect(valRes.validationRun.status).toBe('passed');
+      expect(valRes.validationRun.eligibility).toBe('eligible');
+      expect(valRes.validationRun.gates.every(g => g.status === 'passed')).toBe(true);
+
+      // Gate 1: read_only_endpoint passes
+      const gate1 = valRes.validationRun.gates.find(g => g.gateId === 'read_only_endpoint');
+      expect(gate1?.status).toBe('passed');
+      expect(gate1?.details).toContain('verified idempotent read-only GET query');
+
+      // Gate 3: allowed_operations_only passes bounds check
+      const gate3 = valRes.validationRun.gates.find(g => g.gateId === 'allowed_operations_only');
+      expect(gate3?.status).toBe('passed');
+      expect(gate3?.details).toContain('Constrained rate-limit retry bounds verified');
+
+      // Activation and post-activation replay succeed under bounded retry
+      const actRes = await incidentService.activatePatch(proposal.patch.id, 'prj_demo_default', 'development', proposal.patch.hash);
+      expect(actRes.recoveryStatus).toBe('recovered');
+      expect(actRes.postActivationReplay.status).toBe('passed');
+      expect(actRes.postActivationReplay.replays[0].result.status).toBe('bounded_retry_succeeded');
+    });
+
+    it('refuses automated retry for non-idempotent or payment-like actions (replay_risk refusal, FR-SIM-06)', async () => {
+      // Create a test non-idempotent payment rate-limit incident
+      const testIncidentId = 'inc_payment_429';
+      incidentService['incidents'].set(testIncidentId, {
+        id: testIncidentId,
+        projectId: 'prj_demo_default',
+        environment: 'development',
+        sessionId: 'sess_1',
+        provider: 'payments',
+        endpoint: '/payments/charge',
+        fingerprint: 'fp_payment_rate_limit',
+        status: 'detected',
+        severity: 'high',
+        summary: 'Rate limit behavioral drift: Payment provider returned 429',
+        detectedAt: new Date().toISOString(),
+        evidenceStrength: 'confirmed',
+        affectedWorkflows: ['welcome_email'],
+        findings: [
+          {
+            id: 'find_pay_rl',
+            type: 'rate_limit_drift',
+            provider: 'payments',
+            endpoint: '/payments/charge',
+            fieldName: 'rate_limit',
+            path: '$',
+            evidenceStrength: 'confirmed',
+            beforeValue: { status: 200 },
+            afterValue: { status: 429, retryAfter: { seconds: 5, raw: '5', format: 'seconds' } },
+            description: 'Payment provider rate limited'
+          }
+        ],
+        beforeEvidence: {},
+        afterEvidence: {},
+        failedWorkflows: [],
+        auditEventId: 'aud_pay'
+      });
+
+      // Propose repair on non-idempotent payment incident
+      const propRes = await incidentService.proposeRepair(testIncidentId, 'prj_demo_default', 'development');
+      const proposal = propRes.proposal;
+
+      // Refusal behavior verified
+      expect(proposal.recommendation).toBe('review_required');
+      expect(proposal.rateLimitPolicy?.replayRisk).toBe('non_idempotent_refusal');
+      expect(proposal.rateLimitPolicy?.status).toBe('review_required');
+      expect(proposal.uncertainties).toContain('non_idempotent_side_effect_refusal');
+      expect(proposal.rateLimitPolicy?.explanation).toContain('Refusing automated retry');
+
+      // Shadow validation fails read_only_endpoint and replay_safe_workflows gates
+      const valRes = await incidentService.validatePatch(proposal.patch.id, 'prj_demo_default', 'development', proposal.patch.hash);
+      expect(valRes.validationRun.status).toBe('failed');
+      expect(valRes.validationRun.eligibility).toBe('review_required');
+
+      const readOnlyGate = valRes.validationRun.gates.find(g => g.gateId === 'read_only_endpoint');
+      expect(readOnlyGate?.status).toBe('failed');
+
+      const replaySafeGate = valRes.validationRun.gates.find(g => g.gateId === 'replay_safe_workflows');
+      expect(replaySafeGate?.status).toBe('failed');
+
+      // Attempted activation is rejected with 409 PATCH_NOT_ELIGIBLE
+      await expect(
+        incidentService.activatePatch(proposal.patch.id, 'prj_demo_default', 'development', proposal.patch.hash)
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'PATCH_NOT_ELIGIBLE'
+      });
+    });
+
+    it('SDK ingestion 429 does not become external provider drift (FR-MON-01, NFR-19)', async () => {
+      // Check current incidents count
+      const initialIncidents = incidentService.listIncidents('prj_demo_default', 'development');
+
+      // Verify directly on the rate-limiter: SDK 429 remains transport backpressure only
+      const rateLimitCheck = detectRateLimitDrift([]);
+      expect(rateLimitCheck.hasRateLimitDrift).toBe(false);
+
+      // Verify no provider drift was fabricated in incident service
+      const afterIncidents = incidentService.listIncidents('prj_demo_default', 'development');
+      expect(afterIncidents.length).toBe(initialIncidents.length);
+    });
+
+    it('distinguishes provider outage (500/503) from rate-limit backpressure (429)', () => {
+      // 503 Provider unavailable
+      const outageResult = detectRateLimitDrift([
+        { statusCode: 503, endpoint: '/users/:id', method: 'GET' }
+      ]);
+      expect(outageResult.hasRateLimitDrift).toBe(false);
+      expect(outageResult.isOutage).toBe(true);
+      expect(outageResult.description).toContain('Outage classified separately');
+
+      // 429 Rate limit
+      const rlResult = detectRateLimitDrift([
+        { statusCode: 429, headers: { 'retry-after': '5' }, endpoint: '/users/:id', method: 'GET' }
+      ]);
+      expect(rlResult.hasRateLimitDrift).toBe(true);
+      expect(rlResult.isOutage).toBe(false);
     });
   });
 });

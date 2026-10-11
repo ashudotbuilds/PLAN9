@@ -329,9 +329,48 @@ export const FindingTypeSchema = z.enum([
   'field_added',
   'field_type_changed',
   'semantic_behavior_drift',
-  'pagination_protocol_drift'
+  'pagination_protocol_drift',
+  'rate_limit_drift'
 ]);
 export type FindingType = z.infer<typeof FindingTypeSchema>;
+
+// Ticket 17: Rate Limit & Bounded Retry Handling Schemas (FR-SIM-06, FR-OBS-06, FR-DET-06)
+export const RetryAfterFormatSchema = z.enum([
+  'seconds',
+  'http_date',
+  'missing',
+  'malformed'
+]);
+export type RetryAfterFormat = z.infer<typeof RetryAfterFormatSchema>;
+
+export const ParsedRetryAfterSchema = z.object({
+  seconds: z.number().int().nonnegative().nullable(),
+  raw: z.string().nullable(),
+  format: RetryAfterFormatSchema
+});
+export type ParsedRetryAfter = z.infer<typeof ParsedRetryAfterSchema>;
+
+export const RateLimitReplayRiskSchema = z.enum([
+  'safe_idempotent',
+  'non_idempotent_refusal'
+]);
+export type RateLimitReplayRisk = z.infer<typeof RateLimitReplayRiskSchema>;
+
+export const RateLimitRetryPolicySchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  endpoint: z.string(),
+  maxRetries: z.number().int().min(1).max(5).default(3),
+  maxDurationSeconds: z.number().int().min(1).max(120).default(60),
+  backoffScheduleMs: z.array(z.number().int().nonnegative()),
+  retryAfter: ParsedRetryAfterSchema,
+  idempotentOnly: z.boolean(),
+  replayRisk: RateLimitReplayRiskSchema,
+  status: z.enum(['proposed', 'review_required', 'rejected', 'bounded_retry_approved']),
+  explanation: z.string(),
+  exhaustionExplanation: z.string()
+});
+export type RateLimitRetryPolicy = z.infer<typeof RateLimitRetryPolicySchema>;
 
 export const EvidenceStrengthSchema = z.enum(['limited', 'moderate', 'strong', 'confirmed']);
 export type EvidenceStrength = z.infer<typeof EvidenceStrengthSchema>;
@@ -584,7 +623,8 @@ export const RepairProposalSchema = z.object({
   requiredChecks: z.array(z.string()),
   createdAt: z.string().datetime(),
   auditEventId: z.string(),
-  paginationStrategy: BoundedPaginationStrategySchema.optional()
+  paginationStrategy: BoundedPaginationStrategySchema.optional(),
+  rateLimitPolicy: RateLimitRetryPolicySchema.optional()
 });
 export type RepairProposal = z.infer<typeof RepairProposalSchema>;
 
@@ -593,7 +633,8 @@ export const ProposeRepairRequestSchema = z.object({
   environment: ProjectEnvironmentSchema.optional(),
   sessionId: z.string().optional(),
   model: z.enum(['deterministic_fallback', 'custom', 'live_model']).optional(),
-  strategy: z.union([z.string(), BoundedPaginationStrategySchema]).optional()
+  strategy: z.union([z.string(), BoundedPaginationStrategySchema]).optional(),
+  rateLimitPolicy: RateLimitRetryPolicySchema.optional()
 });
 export type ProposeRepairRequest = z.infer<typeof ProposeRepairRequestSchema>;
 

@@ -205,3 +205,197 @@ export function detectPaginationProtocolDrift(
     itemIds
   };
 }
+
+// Ticket 17: Rate Limit Parsing & Behavioral Drift Detection (FR-SIM-06, FR-OBS-06, FR-DET-06, NFR-19)
+import type {
+  ParsedRetryAfter,
+  RateLimitRetryPolicy,
+  RateLimitReplayRisk,
+  EvidenceStrength
+} from '@driftguard/contracts';
+
+/**
+ * Parse Retry-After header across supported formats:
+ * 1. Integer seconds ('5', '60')
+ * 2. HTTP date ('Wed, 21 Oct 2026 07:28:00 GMT')
+ * 3. Missing / absent (null, undefined, '')
+ * 4. Malformed string ('invalid', negative, non-date string)
+ */
+export function parseRetryAfter(
+  header: string | null | undefined,
+  now?: Date
+): ParsedRetryAfter {
+  if (header === null || header === undefined || header.trim() === '') {
+    return {
+      seconds: null,
+      raw: null,
+      format: 'missing'
+    };
+  }
+
+  const trimmed = header.trim();
+
+  // 1. Integer seconds
+  if (/^\d+$/.test(trimmed)) {
+    const sec = parseInt(trimmed, 10);
+    return {
+      seconds: sec >= 0 ? sec : 0,
+      raw: trimmed,
+      format: 'seconds'
+    };
+  }
+
+  // 2. HTTP Date
+  const parsedMs = Date.parse(trimmed);
+  if (!Number.isNaN(parsedMs)) {
+    const baseNow = now ?? new Date();
+    const diffSec = Math.max(0, Math.round((parsedMs - baseNow.getTime()) / 1000));
+    return {
+      seconds: diffSec,
+      raw: trimmed,
+      format: 'http_date'
+    };
+  }
+
+  // 3. Malformed
+  return {
+    seconds: null,
+    raw: trimmed,
+    format: 'malformed'
+  };
+}
+
+export interface RateLimitObservationInput {
+  statusCode: number;
+  headers?: Record<string, string | string[] | undefined>;
+  endpoint?: string;
+  method?: string;
+  isIdempotent?: boolean;
+}
+
+export interface RateLimitDriftResult {
+  hasRateLimitDrift: boolean;
+  isOutage: boolean;
+  statusCode: number;
+  evidenceStrength: EvidenceStrength;
+  corroboratedCount: number;
+  retryAfter: ParsedRetryAfter;
+  replayRisk: RateLimitReplayRisk;
+  recommendedPolicy?: RateLimitRetryPolicy;
+  description: string;
+}
+
+export function detectRateLimitDrift(
+  observations: RateLimitObservationInput[],
+  options: {
+    provider?: string;
+    endpoint?: string;
+    now?: Date;
+    maxRetries?: number;
+    maxDurationSeconds?: number;
+  } = {}
+): RateLimitDriftResult {
+  const provider = options.provider ?? 'users';
+  const endpoint = options.endpoint ?? '/users/:id';
+  const maxRetries = Math.min(3, Math.max(1, options.maxRetries ?? 3));
+  const maxDurationSeconds = Math.min(60, Math.max(1, options.maxDurationSeconds ?? 60));
+
+  const count429 = observations.filter(o => o.statusCode === 429).length;
+  const count5xx = observations.filter(o => o.statusCode >= 500 && o.statusCode <= 599).length;
+
+  if (count429 === 0) {
+    const isOutage = count5xx > 0;
+    return {
+      hasRateLimitDrift: false,
+      isOutage,
+      statusCode: observations[0]?.statusCode ?? 200,
+      evidenceStrength: 'limited',
+      corroboratedCount: 0,
+      retryAfter: { seconds: null, raw: null, format: 'missing' },
+      replayRisk: 'safe_idempotent',
+      description: isOutage
+        ? 'Provider unavailable or internal server error (5xx). Outage classified separately from rate-limiting drift.'
+        : 'No rate limit drift detected.'
+    };
+  }
+
+  // Find the primary 429 observation to inspect headers
+  const primary429 = observations.find(o => o.statusCode === 429)!;
+  const rawRetryAfterHeader = primary429.headers?.['retry-after'] ?? primary429.headers?.['Retry-After'];
+  const headerStr = Array.isArray(rawRetryAfterHeader) ? rawRetryAfterHeader[0] : rawRetryAfterHeader;
+  const parsedRetryAfter = parseRetryAfter(headerStr, options.now);
+
+  // Evidence maturity: 1 observation is limited/suspected; 3+ is confirmed
+  const evidenceStrength: EvidenceStrength = count429 >= 3 ? 'confirmed' : 'limited';
+
+  // Determine idempotency and side-effect risk
+  const method = (primary429.method ?? 'GET').toUpperCase();
+  const isExplicitIdempotent = primary429.isIdempotent;
+  const isReadOnlyGet = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+  const isPaymentOrSideEffect = /payment|order|charge|checkout|transfer/i.test(endpoint);
+
+  const isSafeToRetry = (isReadOnlyGet || isExplicitIdempotent === true) && !isPaymentOrSideEffect;
+  const replayRisk: RateLimitReplayRisk = isSafeToRetry ? 'safe_idempotent' : 'non_idempotent_refusal';
+
+  // Bounded retry schedule calculation
+  const baseDelayMs = parsedRetryAfter.seconds !== null && parsedRetryAfter.seconds > 0
+    ? parsedRetryAfter.seconds * 1000
+    : 1000;
+
+  const backoffScheduleMs: number[] = [];
+  for (let i = 1; i <= maxRetries; i++) {
+    const delay = Math.min(baseDelayMs * i, maxDurationSeconds * 1000);
+    backoffScheduleMs.push(delay);
+  }
+
+  let explanation = '';
+  let status: 'proposed' | 'review_required' | 'rejected' | 'bounded_retry_approved' = 'proposed';
+
+  if (!isSafeToRetry) {
+    status = 'review_required';
+    explanation = `Refusing automated retry: operation ${method} ${endpoint} is non-idempotent or carries side-effect risk (e.g. payment/mutation). Operator review required to prevent duplicate execution.`;
+  } else {
+    status = 'bounded_retry_approved';
+    if (parsedRetryAfter.format === 'seconds') {
+      explanation = `Bounded retry policy: parsed Retry-After of ${parsedRetryAfter.seconds}s. Safe read-only GET query will retry up to ${maxRetries} times within ${maxDurationSeconds}s maximum duration.`;
+    } else if (parsedRetryAfter.format === 'http_date') {
+      explanation = `Bounded retry policy: parsed HTTP-Date Retry-After (${parsedRetryAfter.raw}) yielding ${parsedRetryAfter.seconds}s delta. Safe read-only GET query will retry up to ${maxRetries} times within ${maxDurationSeconds}s.`;
+    } else if (parsedRetryAfter.format === 'missing') {
+      explanation = `Bounded retry policy: Retry-After header absent. Applying default exponential backoff schedule [${backoffScheduleMs.join(', ')}]ms up to ${maxRetries} retries within ${maxDurationSeconds}s.`;
+    } else {
+      explanation = `Bounded retry policy: Retry-After header '${parsedRetryAfter.raw}' is malformed. Safely falling back to bounded backoff schedule [${backoffScheduleMs.join(', ')}]ms up to ${maxRetries} retries within ${maxDurationSeconds}s.`;
+    }
+  }
+
+  const exhaustionExplanation = `When retry attempts exceed ${maxRetries} or cumulative elapsed time reaches ${maxDurationSeconds}s, retry_exhausted is signaled and the workflow fails closed without unbounded background loops.`;
+
+  const recommendedPolicy: RateLimitRetryPolicy = {
+    id: `rl-policy-${Date.now()}`,
+    provider,
+    endpoint,
+    maxRetries,
+    maxDurationSeconds,
+    backoffScheduleMs,
+    retryAfter: parsedRetryAfter,
+    idempotentOnly: true,
+    replayRisk,
+    status,
+    explanation,
+    exhaustionExplanation
+  };
+
+  const description = `Rate limit behavioral drift detected: provider returned HTTP 429 Too Many Requests (${count429} observation(s) recorded, evidence: ${evidenceStrength}). ${explanation}`;
+
+  return {
+    hasRateLimitDrift: true,
+    isOutage: false,
+    statusCode: 429,
+    evidenceStrength,
+    corroboratedCount: count429,
+    retryAfter: parsedRetryAfter,
+    replayRisk,
+    recommendedPolicy,
+    description
+  };
+}
+

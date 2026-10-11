@@ -71,6 +71,27 @@ export function buildMockProvidersApp(options: MockProvidersOptions = {}): Fasti
       });
     }
 
+    if (activeScenarios.has('users.rate-limit')) {
+      const query = (request.query as Record<string, string>) || {};
+      const retryAfterHeader = (request.headers['x-mock-retry-after'] as string) ?? query.retry_after ?? '5';
+      if (retryAfterHeader !== 'none') {
+        reply.header('retry-after', retryAfterHeader);
+      }
+      const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+      return reply.status(429).send({
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'Rate limit exceeded. Please retry after delay.',
+          details: {
+            limit: 100,
+            remaining: 0,
+            retryAfter: retryAfterHeader !== 'none' ? retryAfterHeader : undefined
+          },
+          correlationId
+        }
+      });
+    }
+
     if (activeScenarios.has('users.field-rename')) {
       return {
         id: user.id,
@@ -172,8 +193,41 @@ export function buildMockProvidersApp(options: MockProvidersOptions = {}): Fasti
     return { estimated_delivery_date: `${yyyy}-${mm}-${dd}` };
   });
 
+  // M07: Payment/Side-effect endpoint (FR-SIM-06)
+  app.post('/payments/charge', async (request, reply) => {
+    if (activeScenarios.has('payments.rate-limit') || activeScenarios.has('users.rate-limit')) {
+      const retryAfterHeader = (request.headers['x-mock-retry-after'] as string) ?? '5';
+      if (retryAfterHeader !== 'none') {
+        reply.header('retry-after', retryAfterHeader);
+      }
+      const correlationId = (reply.getHeader(CORRELATION_ID_HEADER) as string) || 'corr_unknown';
+      return reply.status(429).send({
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'Payment provider rate limit exceeded.',
+          details: { retryAfter: retryAfterHeader !== 'none' ? retryAfterHeader : undefined },
+          correlationId
+        }
+      });
+    }
+
+    return {
+      status: 'charged',
+      chargeId: `ch_${Date.now()}`,
+      amount: (request.body as Record<string, unknown>)?.amount ?? 100,
+      currency: 'USD'
+    };
+  });
+
   // Scenario management for demo control
   app.post('/scenarios/:scenarioId/inject', async (request) => {
+    const { scenarioId } = request.params as { scenarioId: string };
+    activeScenarios.add(scenarioId);
+    return { ok: true, activeScenarios: Array.from(activeScenarios) };
+  });
+
+  // M04: Simulator scenario control
+  app.post('/__control/scenarios/:scenarioId', async (request) => {
     const { scenarioId } = request.params as { scenarioId: string };
     activeScenarios.add(scenarioId);
     return { ok: true, activeScenarios: Array.from(activeScenarios) };
