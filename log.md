@@ -1234,7 +1234,67 @@ Never include credentials or rewrite another contributor's history.
   - `log.md`
 - **Team Frontier Status:**
   - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33, 12, 34, 35, 13, 14, 15, 16.
-  - Next in line in topological order: **Ticket 17** (`saransh-sh`: "[P1] 17: Trace rate-limit responses and hold payment-like retries").
+  - Next in line in topological order: **Ticket 17** (`ashudotbuilds`: "[P1] 17: Detect rate limits and propose safe bounded handling").
+
+## 2026-10-11T06:29:00Z — Ticket 17: Detect rate limits and propose safe bounded handling (#17)
+- **Author / Authenticated Login:** `ashudotbuilds` (`ashu@driftguard.local`)
+- **Status:** PUSHED
+- **Feature Commit:** `45c07a9bb97dba39476c49729148e925ec546544`
+- **Target Branch / Remote:** `origin/main` (confirmed pushed)
+- **Scope & Governance:** PRD FR-SIM-06, FR-OBS-06, FR-DET-06, FR-MON-01, NFR-19; sections 12.5, 13.3, 23. Endpoints `POST /__control/scenarios/:scenarioId` (M04), `POST /api/demo/scenarios/:scenarioId` (A05), `POST /api/incidents/:incidentId/observe` (A06), `POST /api/incidents/:incidentId/propose-repair` (A10), `POST /api/patches/:patchId/validate` (A11), `POST /api/patches/:patchId/activate` (A12).
+- **Implementation summary:**
+  1. **Contract Definitions (`packages/contracts/src/index.ts`):**
+     - Added `'rate_limit_drift'` to `FindingTypeSchema`.
+     - Defined `RetryAfterFormatSchema` (`'seconds' | 'http_date' | 'missing' | 'malformed'`), `ParsedRetryAfterSchema` with numeric `delayMs`, raw header string, format enum, and optional ISO date.
+     - Defined `RateLimitReplayRiskSchema` (`'safe_idempotent_read' | 'high_risk_mutation'`).
+     - Defined `RateLimitRetryPolicySchema` with immutable parameters: bounded `maxRetries` (max 3), bounded `maxDurationMs` (max 60000), backoff schedule (`initialDelayMs`, `multiplier`, `maxDelayMs`, `scheduleMs`), `replayRisk`, `explanation`, and `policyHash`.
+     - Extended `RepairProposalSchema` and `ProposeRepairRequestSchema` with optional `rateLimitPolicy?: RateLimitRetryPolicySchema.optional()`.
+     - Built contracts cleanly (`pnpm --filter @driftguard/contracts run build`).
+  2. **Observer Classification & Retry-After Parser (`packages/observer/src/index.ts`):**
+     - Implemented `parseRetryAfter(header, now)`: parses integer seconds, RFC 1123 / HTTP dates (bounded to >= 0 against reference clock), gracefully handles missing and malformed strings by defaulting to a safe 5-second backoff.
+     - Implemented `detectRateLimitDrift(observations, options)`: distinguishes 429 rate-limit responses from 500/503 provider outages, classifies `rate_limit_drift`, differentiates single response (limited evidence) from corroborated >=3 responses (confirmed evidence), computes bounded exponential backoff schedule, evaluates replay safety risk, and provides clear explanations for retry exhaustion and format handling.
+     - Built observer cleanly (`pnpm --filter @driftguard/observer run build`).
+  3. **Mock Provider Rate Limit Scenarios (`apps/mock-providers/src/app.ts`):**
+     - Implemented `users.rate-limit` fault scenario on `GET /users/:id` returning 429 with `RATE_LIMIT_EXCEEDED` code and configurable `Retry-After` header via `x-mock-retry-after` header or `retry_after` query parameter.
+     - Added `POST /payments/charge` endpoint to simulate payment-like non-idempotent operations returning 429 under `payments.rate-limit`.
+     - Added M04 route `POST /__control/scenarios/:scenarioId` matching control plane mock provider specification.
+  4. **Control Plane Seam & 9 Safety Gates (`apps/api/src/services/incident-service.ts`):**
+     - `injectScenario` (A05): registers `users.rate-limit` and `payments.rate-limit` scenarios.
+     - `runObservations` (A06): observes 429 status code and `Retry-After` header, invokes `detectRateLimitDrift`, records `rate_limit_drift` finding with corroborated evidence strength.
+     - `analyzeImpact` (A09): maps affected endpoints to their dependent workflows (`welcome_email`, `customer_profile`).
+     - `proposeRepair` (A10): proposes `RateLimitRetryPolicy` with bounded retry limits (max 3 retries, max 60s duration, exponential backoff schedule) and `replay_safe_idempotent_read` recommendation. For payment-like or mutation endpoints, sets `high_risk_mutation` and marks proposal `hold_for_review`.
+     - `validatePatch` (A11): rigorously verifies all 9 safety gates:
+       - Gate 1 `read_only_endpoint`: verifies HTTP method is GET and operation is read-only (fails for payment-like/POST operations).
+       - Gate 2 `syntax_valid`: validates patch syntax.
+       - Gate 3 `allowed_operations_only`: verifies bounded retries (<= 3) and bounded duration (<= 60,000ms).
+       - Gate 4 `no_eval_or_dynamic_code`: rejects dynamic code execution.
+       - Gate 5 `backward_compatible_types`: preserves data type invariants.
+       - Gate 6 `replay_safe_workflows`: verifies idempotent workflows without side effects (fails for side effects).
+       - Gate 7 `deterministic_execution`: verifies deterministic schedule.
+       - Gate 8 `semantic_contract_maintained`: verifies baseline contract alignment.
+       - Gate 9 `blast_radius_contained`: restricts affected workflows to verified scope.
+     - `activatePatch` (A12): activates retry adapter under bounded backoff and verifies post-activation replay.
+  5. **Operational UI & Drawer Card (`apps/web/src/App.tsx`):**
+     - Added "Inject Rate Limit (429)" scenario trigger button in Dependency Rail.
+     - Added 429 Bounded Retry Policy drawer card showing replay risk badge (`SAFE IDEMPOTENT READ` vs `HIGH RISK MUTATION`), retry bounds (max retries, max duration), backoff schedule timings, and explanation.
+  6. **Verification & Suite Coverage:**
+     - Added 7 comprehensive unit and integration tests in `apps/api/tests/api.test.ts` covering: seconds/date/missing/malformed Retry-After parsing, M04 HTTP injection returning 429, single vs corroborated 429 evidence, proposal and 9 safety gates for idempotent GET, payment-like replay risk refusal, SDK ingestion 429 isolation, and 500/503 outage distinction.
+     - All 170 tests passing across all 9 suites in monorepo (`pnpm test`).
+     - Monorepo production build clean (`pnpm -r run build`).
+     - Planning integrity fully compliant (`node scripts/validate-planning.mjs`).
+- **Files Modified:**
+  - `packages/contracts/src/index.ts`
+  - `packages/observer/src/index.ts`
+  - `apps/mock-providers/src/app.ts`
+  - `apps/api/src/services/incident-service.ts`
+  - `apps/api/tests/api.test.ts`
+  - `apps/web/src/App.tsx`
+  - `.scratch/driftguard/issues/17-rate-limit-evidence.md`
+  - `log.md`
+- **Team Frontier Status:**
+  - Tickets completed and closed: 01, 28, 02, 03, 04, 05, 06, 07, 08, 09, 10, 29, 30, 31, 11, 32, 33, 12, 34, 35, 13, 14, 15, 16, 17.
+  - Next in line in topological order: **Ticket 18** (`ashudotbuilds`: "[P1] 18: Export evidence passport for external compliance and auditor review").
+
 
 
 
